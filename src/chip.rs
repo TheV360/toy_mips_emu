@@ -57,13 +57,13 @@ impl From<usize> for Register {
 }
 
 struct Cpu {
-	pub mem: Box<[u8; 0xFFFF_FFFF]>,
+	pub mem: Box<[u8; 0xFF_FFFF]>,
 	pub reg: [word; 32],
 	pub pc: word,
 }
 impl Default for Cpu {
 	fn default() -> Self {
-		let mem = vec![0u8; 0xFFFF_FFFF].into_boxed_slice();
+		let mem = vec![0u8; 0xFF_FFFF].into_boxed_slice();
 		let mem = mem.try_into().expect("This should never fail.");
 		Cpu {
 			mem,
@@ -126,8 +126,9 @@ impl Cpu {
 		let rt = ((ins >> 16) & Self::REGISTER_SIZE) as usize;
 		let rd = ((ins >> 11) & Self::REGISTER_SIZE) as usize;
 		let imm = ins & 0xFFFF; // also "zero extension"
-		let se_imm = ins.wrapping_shl(16).wrapping_shr(16); // sign extension
-		let b_addr = imm.wrapping_shl(18).wrapping_shr(16); // sign-extended address
+		let se_imm = ((ins << 16) as i32 >> 16) as u32; // sign extension
+		let b_addr = ((imm << 18) as i32 >> 16) as u32; // sign-extended address
+		println!("{se_imm:08x}");
 		// FIXME: sign extension does Not work.
 		
 		// R format only
@@ -137,7 +138,7 @@ impl Cpu {
 		// J format only
 		let j_addr = (ins & 0x03FF_FFFF) << 2;
 		
-		println!("0x{ins:08x} {:?} = {:?} op {:?} /// branch {b_addr:08x}", Register::from(rd), Register::from(rs), Register::from(rt));
+		println!("0x{ins:08x} {:?} = {:?} op {:?}", Register::from(rd), Register::from(rs), Register::from(rt));
 		
 		match opcode {
 			0x00 => {
@@ -157,10 +158,10 @@ impl Cpu {
 					};
 				}
 			},
-			/*beq  */ 0x04 => if self.reg[rs] == self.reg[rt] { self.pc += b_addr; },
-			/*bne  */ 0x05 => if self.reg[rs] != self.reg[rt] { self.pc += b_addr; },
+			/*beq  */ 0x04 => if self.reg[rs] == self.reg[rt] { self.pc = self.pc.wrapping_add(b_addr); },
+			/*bne  */ 0x05 => if self.reg[rs] != self.reg[rt] { self.pc = self.pc.wrapping_add(b_addr); },
 			/*addi */ 0x08 => self.reg[rt] = (self.reg[rs] as i32 + imm as i32) as u32,
-			/*addiu*/ 0x09 => self.reg[rt] = self.reg[rs] + imm,
+			/*addiu*/ 0x09 => self.reg[rt] = self.reg[rs].wrapping_add(se_imm),
 			/*slti */ 0x0a => self.reg[rt] = ((self.reg[rs] as i32) < (se_imm as i32)) as u32,
 			/*sltiu*/ 0x0b => self.reg[rt] = (self.reg[rs] < se_imm) as u32,
 			/*lui  */ 0x0f => self.reg[rt] = imm << 16,
@@ -237,16 +238,16 @@ mod tests {
 	
 	#[test]
 	fn silly_stuff() {
-		// .data 0x10010000
-		// .text 0x00400000
+		// .data 0x002000
+		// .text 0x000000
 		
 		let mut cpu = Cpu::default();
 		let data = include_bytes!("../bitmap_example.data.bin");
 		let text = include_bytes!("../bitmap_example.text.bin");
 		
-		cpu.mem[0x1001_0000..][..data.len()].copy_from_slice(data);
-		cpu.mem[0x0040_0000..][..text.len()].copy_from_slice(text);
-		cpu.pc = 0x0040_0000;
+		cpu.mem[0x00_2000..][..data.len()].copy_from_slice(data);
+		cpu.mem[0x00_0000..][..text.len()].copy_from_slice(text);
+		cpu.pc = 0x00_0000;
 		
 		for i in 0..128 { print!("#{i:3} | pc 0x{:08x} | ", cpu.pc); cpu.tick(); }
 	}
