@@ -35,18 +35,25 @@ fn main() {
 	let mut buffer: Box<[u32]> = vec![0x201d1a; WIDTH * HEIGHT].into_boxed_slice();
 	
 	let mut cpu = Cpu::default();
-	let data = include_bytes!("../bitmap_example.data.bin");
-	let text = include_bytes!("../bitmap_example.text.bin");
+	const PRG_DATA: &[u8] = include_bytes!("../bitmap_example.data.bin");
+	const PRG_TEXT: &[u8] = include_bytes!("../bitmap_example.text.bin");
 	
-	cpu.mem[0x00_2000..][..data.len()].copy_from_slice(data);
-	cpu.mem[0x00_0000..][..text.len()].copy_from_slice(text);
-	cpu.pc = 0x00_0000;
-	cpu[Register::gp] = 0x1800;
-	cpu[Register::sp] = 0x3FFC;
+	fn reset_cpu(cpu: &mut Cpu) {
+		cpu.mem.fill(0);
+		cpu.mem[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
+		cpu.mem[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
+		cpu.pc = 0x00_0000;
+		cpu.halt = false;
+		cpu[Register::gp] = 0x1800;
+		cpu[Register::sp] = 0x3FFC;
+	}
+	reset_cpu(&mut cpu);
 	
 	let mut ticked = true;
 	let mut mouse = MyMouse::default();
 	let mut full_steam_ahead = false;
+	let mut steam_speed = 1i32;
+	let mut frame_clock = 0;
 	let mut look_addr = 0x0000usize;
 	
 	while win.is_open() {
@@ -59,17 +66,43 @@ fn main() {
 		mouse.btn_down = btn;
 		
 		let funnny = &format!("0x{:08X} + 4", cpu.pc);
-		if imm_button(&mut buffer, &mouse, if cpu.halt { "halt" } else { funnny }, (32, 32), (128, 16))
-		&& !full_steam_ahead {
-			cpu.tick();
-			ticked = true;
+		if imm_button(&mut buffer, &mouse, if cpu.halt { "halt" } else { funnny }, (32, 32), (128, 16)) {
+			if cpu.halt {
+				reset_cpu(&mut cpu); frame_clock = 0;
+				full_steam_ahead = false; ticked = true;
+			} else if !full_steam_ahead {
+				cpu.tick();
+				ticked = true;
+			}
 		}
-		if imm_button(&mut buffer, &mouse, "Go!", (164, 32), (32, 16)) {
-			full_steam_ahead = !full_steam_ahead;
+		
+		if imm_button(&mut buffer, &mouse, "-", (204, 32), (14, 16)) {
+			steam_speed = steam_speed.saturating_sub(1);
+		}
+		if imm_button(&mut buffer, &mouse, "+", (222, 32), (14, 16)) {
+			steam_speed += 1;
+		}
+		
+		if imm_button(&mut buffer, &mouse, &format!("{steam_speed}x"), (164, 32), (32, 16)) {
+			if cpu.halt {
+				reset_cpu(&mut cpu); frame_clock = 0;
+				full_steam_ahead = false; ticked = true;
+			} else {
+				full_steam_ahead = !full_steam_ahead;
+			}
 		}
 		if full_steam_ahead {
-			for _ in 0..1 { cpu.tick(); }
-			ticked = true;
+			if steam_speed > 0 {
+				for _ in 0..steam_speed { cpu.tick(); }
+				ticked = true;
+			} else {
+				let denom = 2 - steam_speed;
+				if frame_clock % denom == 0 {
+					cpu.tick();
+					ticked = true;
+				}
+				frame_clock += 1;
+			}
 		}
 		
 		if imm_button(&mut buffer, &mouse, "^3", (348, 8), (24, 16)) {
@@ -89,6 +122,16 @@ fn main() {
 		}
 		if imm_button(&mut buffer, &mouse, "v3", (348, 98), (24, 16)) { //60
 			look_addr = look_addr.saturating_add(0x1000); ticked = true;
+		}
+		if imm_button(&mut buffer, &mouse, "ds", (348, 116), (24, 16)) { //60
+			if look_addr == 0x01_0000 {
+				look_addr = 0x00_0000;
+			} else if look_addr == 0x00_0000 {
+				look_addr = 0x00_2000;
+			} else {
+				look_addr = 0x01_0000;
+			}
+			ticked = true;
 		}
 		
 		draw_fill_rect(&mut buffer, (360, 0), (64, 7), 0x201D1A);
@@ -202,13 +245,12 @@ fn draw_memory(buf: &mut Box<[u32]>, cpu: &Cpu, p: Vec2, mem_addr: usize) {
 			let c = &cpu.mem[addr..][..4].try_into().unwrap();
 			let c = u32::from_le_bytes(*c);
 			draw_fill_rect(buf, (p.0 + x * cell_size.0, py), cell_size, c);
+			if cpu.pc as usize == addr {
+				draw_rect(buf, (p.0 + x * cell_size.0, py), cell_size, 0x8F4020);
+			}
 			addr += 4;
 		}
 	}
-}
-
-fn draw_screen(buf: &mut Box<[u32]>, cpu: &Cpu, p: Vec2) {
-	// const SCREEN_SIZE: Vec2 = ();
 }
 
 fn imm_button(buf: &mut Box<[u32]>, mouse: &MyMouse, text: &str, p: Vec2, s: Vec2) -> bool {
