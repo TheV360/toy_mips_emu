@@ -96,10 +96,33 @@ fn main() {
 		
 		if ticked {
 			let ins = cpu.get_word(cpu.pc);
-			let ins = cpu.get_instruction_str(ins); // TODO: more
-			
-			draw_fill_rect(&mut buffer, (8, 8), (64, 8), 0x201D1A);
-			draw_text(&mut buffer, ins, (8, 8), 0xFFCCAA);
+			if let Some((ins_n, i_fmt)) = cpu.get_instruction_info(ins) {
+				use chip::InsFormat::*;
+				use chip::Register::*;
+				
+				let rs = Register::from(((ins >> 21) & Cpu::REGISTER_SIZE) as usize);
+				let rt = Register::from(((ins >> 16) & Cpu::REGISTER_SIZE) as usize);
+				let rd = Register::from(((ins >> 11) & Cpu::REGISTER_SIZE) as usize);
+				
+				let s = &format!("{ins_n} {}", match i_fmt {
+					R => {
+						let shamt = (ins >> 6) & 0x1F;
+						format!("{rd:?}, {rs:?}, {rt:?}; {shamt}")
+					},
+					I => {
+						let imm = ins & 0xFFFF;
+						format!("{rt:?}, {rs:?}, 0x{imm:X}")
+					},
+					J => {
+						let j_addr = (ins & 0x03FF_FFFF) << 2;
+						format!("0x{j_addr:08X}")
+					},
+					Sys => format!("(service {})", cpu[v0]),
+				});
+				
+				draw_fill_rect(&mut buffer, (8, 8), (256, 8), 0x201D1A);
+				draw_text(&mut buffer, s, (8, 8), 0xFFCCAA);
+			}
 			
 			draw_registers(&mut buffer, &cpu, (8, 80));
 			draw_memory(&mut buffer, &cpu, (376, 8), look_addr);
@@ -140,11 +163,6 @@ fn main() {
 			draw_fill_rect(&mut buffer, box_pos, box_size, 0x201D1A);
 		}
 	}
-	
-	// for i in 0..1024 { print!("#{i:3} | pc 0x{:08x} | ", cpu.pc); cpu.tick(); }
-	
-	// TODO: basic debugging display.
-	// registers on right, step button, raw memory view on left
 }
 
 fn draw_registers(buf: &mut Box<[u32]>, cpu: &Cpu, p: Vec2) {

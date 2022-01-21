@@ -56,6 +56,28 @@ impl From<usize> for Register {
 	}
 }
 
+#[repr(usize)]
+#[derive(Clone, Copy, Debug)]
+pub enum InsFormat {
+	/// "Result" format
+	/// -- Saves the result of an operation on two registers
+	/// into the `rs` register.
+	R = 0,
+	
+	/// "Immediate" format
+	/// -- Saves the result of an operation between a register
+	/// and an immediate value into the `rs` register.
+	I = 1,
+	
+	/// "Jump" format
+	/// -- Jumps to the specified address.
+	J = 2,
+	
+	/// "`syscall`" format
+	/// -- `syscall`.
+	Sys = 3,
+}
+
 pub struct Cpu {
 	pub mem: Box<[u8; 0xFF_FFFF]>,
 	pub reg: [word; 32],
@@ -95,7 +117,7 @@ impl core::ops::IndexMut<Register> for Cpu {
 // since jump instructions'll thing.
 
 impl Cpu {
-	const REGISTER_SIZE: word = 0x20 - 1;
+	pub const REGISTER_SIZE: word = 0x20 - 1;
 	
 	pub fn get_byte(&self, addr: word) -> u8 {
 		self.mem[addr as usize]
@@ -128,9 +150,11 @@ impl Cpu {
 		if self.halt { return; }
 		
 		let opcode = (ins >> 26) & 0x3F;
-		let rs = ((ins >> 21) & Self::REGISTER_SIZE) as usize;
-		let rt = ((ins >> 16) & Self::REGISTER_SIZE) as usize;
-		let rd = ((ins >> 11) & Self::REGISTER_SIZE) as usize;
+		let rs = Register::from(((ins >> 21) & Self::REGISTER_SIZE) as usize);
+		let rt = Register::from(((ins >> 16) & Self::REGISTER_SIZE) as usize);
+		let rd = Register::from(((ins >> 11) & Self::REGISTER_SIZE) as usize);
+		
+		// I format only
 		let imm = ins & 0xFFFF; // also "zero extension"
 		let se_imm = ((ins << 16) as i32 >> 16) as u32; // sign extension
 		let b_addr = ((imm << 18) as i32 >> 16) as u32; // sign-extended address
@@ -144,81 +168,96 @@ impl Cpu {
 		
 		match opcode {
 			0x00 => match function {
-				/*sll  */ 0x00 => self.reg[rd] = self.reg[rt] << shamt,
-				/*srl  */ 0x01 => self.reg[rd] = self.reg[rt] >> shamt,
-				/*jr   */ 0x08 => self.pc = self.reg[rs] - WORD_BYTES as word,
+				/*sll  */ 0x00 => self[rd] = self[rt] << shamt,
+				/*srl  */ 0x02 => self[rd] = self[rt] >> shamt,
+				/*jr   */ 0x08 => self.pc = self[rs] - WORD_BYTES as word,
+				/*jalr */ 0x09 => { self[ra] = self.pc; self.pc = self[rs] - WORD_BYTES as word; },
 				/*well.*/ 0x0c => self.do_syscall(),
-				/*add  */ 0x20 => self.reg[rd] = (self.reg[rs] as i32 + self.reg[rt] as i32) as u32,
-				/*addu */ 0x21 => self.reg[rd] = self.reg[rs] + self.reg[rt],
-				/*and  */ 0x24 => self.reg[rd] = self.reg[rs] & self.reg[rt],
-				/*or   */ 0x25 => self.reg[rd] = self.reg[rs] | self.reg[rt],
-				/*slt  */ 0x2a => self.reg[rd] = ((self.reg[rs] as i32) < (self.reg[rt] as i32)) as u32,
-				/*sltu */ 0x2b => self.reg[rd] = (self.reg[rs] < self.reg[rt]) as u32,
+				/*add  */ 0x20 => self[rd] = (self[rs] as i32 + self[rt] as i32) as u32,
+				/*addu */ 0x21 => self[rd] = self[rs].wrapping_add(self[rt]),
+				/*sub  */ 0x22 => self[rd] = (self[rs] as i32 - self[rt] as i32) as u32,
+				/*subu */ 0x23 => self[rd] = self[rs].wrapping_sub(self[rt]),
+				/*and  */ 0x24 => self[rd] = self[rs] & self[rt],
+				/*or   */ 0x25 => self[rd] = self[rs] | self[rt],
+				/*xor  */ 0x26 => self[rd] = self[rs] ^ self[rt],
+				/*nor  */ 0x27 => self[rd] = !(self[rs] | self[rt]),
+				/*slt  */ 0x2a => self[rd] = ((self[rs] as i32) < (self[rt] as i32)) as u32,
+				/*sltu */ 0x2b => self[rd] = (self[rs] < self[rt]) as u32,
 				_ => panic!("no impl for {opcode:02x} fn {function:02x}"),
 			},
 			/*j    */ 0x02 => self.pc = j_addr - WORD_BYTES as word, // TODO: well it's sucks
 			/*jal  */ 0x03 => { self[ra] = self.pc; self.pc = j_addr - WORD_BYTES as word; },
-			/*beq  */ 0x04 => if self.reg[rs] == self.reg[rt] { self.pc = self.pc.wrapping_add(b_addr); },
-			/*bne  */ 0x05 => if self.reg[rs] != self.reg[rt] { self.pc = self.pc.wrapping_add(b_addr); },
-			/*addi */ 0x08 => self.reg[rt] = (self.reg[rs] as i32 + imm as i32) as u32,
-			/*addiu*/ 0x09 => self.reg[rt] = self.reg[rs].wrapping_add(se_imm),
-			/*slti */ 0x0a => self.reg[rt] = ((self.reg[rs] as i32) < (se_imm as i32)) as u32,
-			/*sltiu*/ 0x0b => self.reg[rt] = (self.reg[rs] < se_imm) as u32,
-			/*ori  */ 0x0d => self.reg[rt] = self.reg[rs] | imm,
-			/*lui  */ 0x0f => self.reg[rt] = imm << 16,
-			/*lw   */ 0x23 => self.reg[rt] = self.get_word(self.reg[rs] + se_imm),
-			/*lbu  */ 0x24 => self.reg[rt] = self.get_byte(self.reg[rs] + se_imm) as word,
-			/*lhu  */ 0x25 => self.reg[rt] = self.get_word(self.reg[rs] + se_imm) & 0xFFFF, // TODO: wasteful
-			/*sb   */ 0x28 => self.set_byte(self.reg[rs] + se_imm, (self.reg[rt] & 0xFF) as u8),
-			/*sh   */ 0x29 => self.set_word(self.reg[rs] + se_imm, self.reg[rt] & 0xFFFF), // TODO: also wasteful
-			/*sw   */ 0x2b => self.set_word(self.reg[rs] + se_imm, self.reg[rt]),
+			/*beq  */ 0x04 => if self[rs] == self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
+			/*bne  */ 0x05 => if self[rs] != self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
+			/*addi */ 0x08 => self[rt] = (self[rs] as i32 + imm as i32) as u32,
+			/*addiu*/ 0x09 => self[rt] = self[rs].wrapping_add(se_imm),
+			/*slti */ 0x0a => self[rt] = ((self[rs] as i32) < (se_imm as i32)) as u32,
+			/*sltiu*/ 0x0b => self[rt] = (self[rs] < se_imm) as u32,
+			/*ori  */ 0x0d => self[rt] = self[rs] | imm,
+			/*xori */ 0x0e => self[rt] = self[rs] ^ imm,
+			/*lui  */ 0x0f => self[rt] = imm << 16,
+			/*lw   */ 0x23 => self[rt] = self.get_word(self[rs] + se_imm),
+			/*lbu  */ 0x24 => self[rt] = self.get_byte(self[rs] + se_imm) as word,
+			/*lhu  */ 0x25 => self[rt] = self.get_word(self[rs] + se_imm) & 0xFFFF, // TODO: wasteful
+			/*sb   */ 0x28 => self.set_byte(self[rs] + se_imm, (self[rt] & 0xFF) as u8),
+			/*sh   */ 0x29 => self.set_word(self[rs] + se_imm, self[rt] & 0xFFFF), // TODO: also wasteful
+			/*sw   */ 0x2b => self.set_word(self[rs] + se_imm, self[rt]),
 			_ => panic!("no impl for {opcode:02x}"),
 		}
 		
 		self.pc += WORD_BYTES as word;
 	}
 	
-	pub fn get_instruction_str(&self, ins: word) -> &'static str {
+	pub fn get_instruction_info(&self, ins: word) -> Option<(&'static str, InsFormat)> {
+		use InsFormat::*;
+		
 		let opcode = (ins >> 26) & 0x3F;
 		let function = ins & 0x3F;
 		
 		match opcode {
 			0x00 => match function {
-				0x00 => "sll",
-				0x01 => "srl",
-				0x0c => "syscall",
-				0x20 => "add",
-				0x21 => "addu",
-				0x24 => "and",
-				0x25 => "or",
-				0x2a => "slt",
-				0x2b => "sltu",
-				_ => "IDK",
+				0x00 => Some(("sll"      , R)),
+				0x02 => Some(("srl"      , R)),
+				0x08 => Some(("jr"       , J)),
+				0x09 => Some(("jalr"     , J)),
+				0x0c => Some(("syscall", Sys)),
+				0x20 => Some(("add"      , R)),
+				0x21 => Some(("addu"     , R)),
+				0x22 => Some(("sub"      , R)),
+				0x23 => Some(("subu"     , R)),
+				0x24 => Some(("and"      , R)),
+				0x25 => Some(("or"       , R)),
+				0x26 => Some(("xor"      , R)),
+				0x27 => Some(("nor"      , R)),
+				0x2a => Some(("slt"      , R)),
+				0x2b => Some(("sltu"     , R)),
+				_ => None,
 			},
-			0x02 => "j",
-			0x03 => "jal",
-			0x04 => "beq",
-			0x05 => "bne",
-			0x08 => "addi",
-			0x09 => "addiu",
-			0x0a => "slti",
-			0x0b => "sltiu",
-			0x0d => "ori",
-			0x0f => "lui",
-			0x23 => "lw",
-			0x24 => "lbu",
-			0x25 => "lhu",
-			0x28 => "sb",
-			0x29 => "sh",
-			0x2b => "sw",
-			_ => "IDK", 
+			0x02 => Some(("j"    , J)),
+			0x03 => Some(("jal"  , J)),
+			0x04 => Some(("beq"  , I)),
+			0x05 => Some(("bne"  , I)),
+			0x08 => Some(("addi" , I)),
+			0x09 => Some(("addiu", I)),
+			0x0a => Some(("slti" , I)),
+			0x0b => Some(("sltiu", I)),
+			0x0d => Some(("ori"  , I)),
+			0x0e => Some(("xori" , I)),
+			0x0f => Some(("lui"  , I)),
+			0x23 => Some(("lw"   , I)),
+			0x24 => Some(("lbu"  , I)),
+			0x25 => Some(("lhu"  , I)),
+			0x28 => Some(("sb"   , I)),
+			0x29 => Some(("sh"   , I)),
+			0x2b => Some(("sw"   , I)),
+			_ => None,
 		}
 	}
 	
 	pub fn do_syscall(&mut self) {
 		use Register::*;
 		
-		let service = self.reg[v0 as usize];
+		let service = self[v0];
 		let arg0 = self[a0];
 		
 		match service {
