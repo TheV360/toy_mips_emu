@@ -56,26 +56,26 @@ impl From<usize> for Register {
 	}
 }
 
-#[repr(usize)]
 #[derive(Clone, Copy, Debug)]
 pub enum InsFormat {
 	/// "Result" format
 	/// -- Saves the result of an operation on two registers
-	/// into the `rs` register.
-	R = 0,
+	/// into the `rd` register.
+	R,
 	
 	/// "Immediate" format
 	/// -- Saves the result of an operation between a register
-	/// and an immediate value into the `rs` register.
-	I = 1,
+	/// and an immediate value into the `rt`/`rs` register.
+	/// (`rs` only if using store operations.)
+	I,
 	
 	/// "Jump" format
 	/// -- Jumps to the specified address.
-	J = 2,
+	J,
 	
 	/// "`syscall`" format
 	/// -- `syscall`.
-	Sys = 3,
+	Sys,
 }
 
 pub struct Cpu {
