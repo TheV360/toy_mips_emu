@@ -2,6 +2,7 @@
 
 pub mod chip;
 mod gui; use gui::EmuGui;
+mod display;
 
 fn main() {
 	let options = eframe::NativeOptions::default();
