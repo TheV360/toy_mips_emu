@@ -39,7 +39,7 @@ impl Default for EmuGui {
 		EmuGui {
 			cpu,
 			play: false,
-			tick_ms: 100,
+			tick_ms: 100_000,
 			last_tick: None,
 			mem_look: MemoryPosition::Position(0x00_0000),
 			mem_interp: MemoryInterpretation::Instruction,
@@ -115,7 +115,7 @@ impl epi::App for EmuGui {
 				None => self.last_tick = Some(now),
 				Some(last_tick) => {
 					let since = now.duration_since(last_tick);
-					let times = since.as_millis() as u64 / self.tick_ms;
+					let times = since.as_micros() as u64 / self.tick_ms;
 					if times > 0 {
 						for _ in 0..times { cpu.tick(); }
 						self.last_tick = Some(now);
@@ -163,10 +163,18 @@ impl epi::App for EmuGui {
 				});
 				
 				ui.add(
-					egui::Slider::new(&mut self.tick_ms, 1..=10_000)
-						.suffix("ms")
+					egui::Slider::new(&mut self.tick_ms, 10..=10_000_000)
+						.suffix(" μs")
 						.logarithmic(true)
-				).on_hover_text("Frequency of CPU steps.\n10ms = 1 step every 10 milliseconds, and so on.");
+				).on_hover_text("Frequency of CPU steps.\n10 μs = 1 step every 10 microseconds, and so on.");
+				
+				/*
+				ui.add(
+					egui::Slider::new(&mut self.tick_ms, 10..=10_000_000)
+						.suffix(" Hz")
+						.logarithmic(true)
+				).on_hover_text("Frequency of CPU steps.\n10 Hz = 10 steps every second, and so on -- to a ludicrous degree.");
+				*/
 			});
 		});
 		
