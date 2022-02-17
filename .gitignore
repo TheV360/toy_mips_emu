@@ -1,1 +1,3 @@
 /target
+/program/out.*.bin
+/program/_*.asm
