@@ -28,8 +28,8 @@ enum MemoryInterpretation {
 	Instruction, Text,
 }
 
-const PRG_TEXT: &[u8] = include_bytes!("../bitmap_example.text.bin");
-const PRG_DATA: &[u8] = include_bytes!("../bitmap_example.data.bin");
+const PRG_TEXT: &[u8] = include_bytes!("../program/out.text.bin");
+const PRG_DATA: &[u8] = include_bytes!("../program/out.data.bin");
 
 impl Default for EmuGui {
 	fn default() -> Self {
@@ -97,26 +97,26 @@ impl epi::App for EmuGui {
 			}
 		} else {
 			Style {
-			animation_time: 0.0,
-			visuals: Visuals {
-				dark_mode: false,
-				popup_shadow: Default::default(),
-				window_shadow: Default::default(),
-				collapsing_header_frame: true,
-				window_corner_radius: 0.0,
-				widgets: Widgets {
-					noninteractive: WidgetVisuals {
-						bg_fill: Color32::from_gray(235), // window background
-						bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
-						fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
-						corner_radius: 0.0,
-						expansion: 0.0,
+				animation_time: 0.0,
+				visuals: Visuals {
+					dark_mode: false,
+					popup_shadow: Default::default(),
+					window_shadow: Default::default(),
+					collapsing_header_frame: true,
+					window_corner_radius: 0.0,
+					widgets: Widgets {
+						noninteractive: WidgetVisuals {
+							bg_fill: Color32::from_gray(235), // window background
+							bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
+							fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
+							corner_radius: 0.0,
+							expansion: 0.0,
+						},
+						..Widgets::light()
 					},
-					..Widgets::light()
+					..Visuals::light()
 				},
-				..Visuals::light()
-			},
-			..Default::default()
+				..Default::default()
 			}
 		};
 		ctx.set_style(style);
@@ -446,7 +446,7 @@ impl EmuGui {
 			
 			let mem_take = scr_cells.0 * scr_cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {
-			mmio_display(ui, &cpu.mem[*scr_look..][..mem_take], *scr_cells, *scr_size);
+				mmio_display(ui, &cpu.mem[*scr_look..][..mem_take], *scr_cells, *scr_size);
 			});
 		});
 	}
