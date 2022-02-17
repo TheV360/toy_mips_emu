@@ -70,7 +70,33 @@ impl epi::App for EmuGui {
 	fn setup(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
 		use eframe::egui::{Color32, Stroke, Style, Visuals, style::{Widgets, WidgetVisuals}};
 		
-		let s = Style {
+		const DARK_MODE: bool = true;
+		
+		let style = if DARK_MODE {
+			Style {
+				animation_time: 0.0,
+				visuals: Visuals {
+					dark_mode: false,
+					popup_shadow: Default::default(),
+					window_shadow: Default::default(),
+					collapsing_header_frame: true,
+					window_corner_radius: 0.0,
+					widgets: Widgets {
+						noninteractive: WidgetVisuals {
+							bg_fill: Color32::from_gray(16), // window background
+							bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
+							fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
+							corner_radius: 0.0,
+							expansion: 0.0,
+						},
+						..Widgets::dark()
+					},
+					..Visuals::dark()
+				},
+				..Default::default()
+			}
+		} else {
+			Style {
 			animation_time: 0.0,
 			visuals: Visuals {
 				dark_mode: false,
@@ -91,10 +117,52 @@ impl epi::App for EmuGui {
 				..Visuals::light()
 			},
 			..Default::default()
+			}
 		};
-		ctx.set_style(s);
+		ctx.set_style(style);
 		
-		// ctx.fonts().
+		use eframe::egui::{FontDefinitions, FontData, FontFamily::*};
+		
+		let mut font_defs = FontDefinitions::default();
+		
+		let fonts = [
+			("emoji", "fonts/emoji.ttf"),
+			("sf_pro", "fonts/sf-pro.otf"),
+			("iosevka", "fonts/iosevka-term.ttf"),
+		];
+		let fonts = fonts.map(
+			|(name, path)| {
+				let name = name.to_owned();
+				let file = std::fs::read(path).unwrap();
+				(name, file)
+			}
+		);
+		
+		let data = &mut font_defs.font_data;
+		
+		for (name, file) in fonts {
+			data.insert(name, FontData::from_owned(file));
+		}
+		
+		let family = &mut font_defs.fonts_for_family;
+		
+		family.insert(
+			Monospace,
+			vec![
+				"iosevka".to_owned(),
+				"emoji".to_owned(),
+			],
+		);
+		family.insert(
+			Proportional,
+			vec![
+				"sf_pro".to_owned(),
+				"iosevka".to_owned(),
+				"emoji".to_owned(),
+			],
+		);
+		
+		ctx.set_fonts(font_defs);
 	}
 	
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
