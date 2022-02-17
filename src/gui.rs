@@ -356,28 +356,8 @@ impl EmuGui {
 						Instruction => {
 							let ins = cpu.get_word(addr);
 							
-							if let Some((ins_name, ins_fmt)) = cpu.get_instruction_info(ins) {
-								use crate::chip::InsFormat::*;
-								
-								let rs = Register::from(((ins >> 21) & Cpu::REGISTER_SIZE) as usize);
-								let rt = Register::from(((ins >> 16) & Cpu::REGISTER_SIZE) as usize);
-								let rd = Register::from(((ins >> 11) & Cpu::REGISTER_SIZE) as usize);
-								
-								match ins_fmt {
-									R => {
-										let shamt = (ins >> 6) & 0x1F;
-										ui.monospace(format!("{ins_name} {rd:?}, {rs:?}, {rt:?}; {shamt}"));
-									},
-									I => {
-										let imm = ins & 0xFFFF;
-										ui.monospace(format!("{ins_name} {rt:?}, {rs:?}, 0x{imm:X}"));
-									},
-									J => {
-										let j_addr = (ins & 0x03FF_FFFF) << 2;
-										ui.monospace(format!("{ins_name} 0x{j_addr:08X}"));
-									},
-									Sys => { ui.monospace("syscall"); },
-								}
+							if let Some(disasm) = cpu.get_disassembly(ins) {
+								ui.monospace(disasm);
 							} else {
 								ui.label("No idea");
 							}

@@ -254,6 +254,38 @@ impl Cpu {
 		}
 	}
 	
+	pub fn get_disassembly(&self, ins: word) -> Option<String> {
+		if let Some((ins_name, ins_fmt)) = self.get_instruction_info(ins) {
+			use InsFormat::*;
+			
+			let rs = Register::from(((ins >> 21) & Cpu::REGISTER_SIZE) as usize);
+			let rt = Register::from(((ins >> 16) & Cpu::REGISTER_SIZE) as usize);
+			let rd = Register::from(((ins >> 11) & Cpu::REGISTER_SIZE) as usize);
+			
+			match ins_fmt {
+				R => {
+					let shamt = (ins >> 6) & 0x1F;
+					Some(format!("{ins_name} {rd:?}, {rs:?}, {rt:?}; {shamt}"))
+				},
+				I => {
+					let imm = ins & 0xFFFF;
+					Some(format!("{ins_name} {rt:?}, {rs:?}, 0x{imm:X}"))
+				},
+				J => {
+					let j_addr = (ins & 0x03FF_FFFF) << 2;
+					Some(format!("{ins_name} 0x{j_addr:08X}"))
+				},
+				Sys => Some("syscall".to_owned()),
+			}
+		} else {
+			None
+		}
+	}
+	
+	// TODO: this should be implemented outside the chip,
+	//       as in real MIPS processors, this raises an exception
+	//       that the environment must then acknowledge. seems
+	//       much better than what i have going on here.
 	pub fn do_syscall(&mut self) {
 		use Register::*;
 		
