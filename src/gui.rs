@@ -278,6 +278,7 @@ impl EmuGui {
 						ui.label(format!("{reg_e:?} ({reg:02})"));
 						ui.monospace(format!("0x{reg_val:08X}"));
 					});
+					
 					if reg % 4 == 3 { ui.end_row(); }
 				}
 			});
@@ -310,16 +311,16 @@ impl EmuGui {
 					ui.selectable_value(mi, Text, "Text (UTF-8)");
 				});
 				
-				ui.radio_value(ml, ProgramCounter, "PC");
-				ui.radio_value(ml, Position(0x00_0000), ".text");
-				ui.radio_value(ml, Position(0x00_2000), ".data");
-				ui.radio_value(ml, Position(0x01_0000), "MMIO");
+				ui.selectable_value(ml, ProgramCounter, "PC");
+				ui.selectable_value(ml, Position(0x00_0000), ".text");
+				ui.selectable_value(ml, Position(0x00_2000), ".data");
+				ui.selectable_value(ml, Position(0x01_0000), "MMIO");
 				
 				if let Position(pos) = ml {
-					if ui.small_button("⬅").clicked() {
+					if ui.small_button("←").clicked() {
 						*pos = pos.saturating_sub(0x10);
 					}
-					if ui.small_button("➡").clicked() {
+					if ui.small_button("→").clicked() {
 						*pos = pos.saturating_add(0x10);
 					}
 				}
@@ -337,7 +338,11 @@ impl EmuGui {
 					
 					if cpu.pc == addr {
 						ui.add(
-							egui::Label::new(egui::RichText::new("➡").background_color(egui::Color32::from_rgb(255, 255, 0)))
+							egui::Label::new(
+								egui::RichText::new("→")
+								.color(egui::Color32::BLACK)
+								.background_color(egui::Color32::from_rgb(255, 255, 0))
+							)
 						);
 					} else {
 						ui.label("");
@@ -440,17 +445,17 @@ impl EmuGui {
 			ui.separator();
 			
 			ui.horizontal(|ui| {
-				ui.radio_value(scr_look, 0x00_0000, ".text");
-				ui.radio_value(scr_look, 0x00_2000, ".data");
-				ui.radio_value(scr_look, 0x01_0000, "MMIO");
+				ui.selectable_value(scr_look, 0x00_0000, ".text");
+				ui.selectable_value(scr_look, 0x00_2000, ".data");
+				ui.selectable_value(scr_look, 0x01_0000, "MMIO");
 				
 				if ui.add_enabled(
-					*scr_look > 0x00_0000, egui::Button::new("⬅").small()
+					*scr_look > 0x00_0000, egui::Button::new("←").small()
 				).clicked() {
 					*scr_look = scr_look.saturating_sub(scr_cells.0 << 2);
 				}
 				if ui.add_enabled(
-					*scr_look < 0x01_0000, egui::Button::new("➡").small()
+					*scr_look < 0x01_0000, egui::Button::new("→").small()
 				).clicked() {
 					*scr_look = scr_look.saturating_add(scr_cells.0 << 2)
 						.min(0x01_0000);
@@ -460,7 +465,9 @@ impl EmuGui {
 			ui.separator();
 			
 			let mem_take = scr_cells.0 * scr_cells.1 * 4;
+			ui.vertical_centered_justified(|ui| {
 			mmio_display(ui, &cpu.mem[*scr_look..][..mem_take], *scr_cells, *scr_size);
+			});
 		});
 	}
 }

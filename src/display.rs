@@ -14,7 +14,7 @@ pub fn mmio_display(ui: &mut Ui, data: &[u8], cells: (usize, usize), cell_size: 
 			for x in 0..cells.0 {
 				let tlx = cell_size.x * x as f32;
 				let tl = Pos2::new(tlx, tly);
-				let c_rect = Rect::from_min_size(tl, cell_size).translate(rect.left_top().to_vec2());
+				let c_rect = Rect::from_min_size(tl, cell_size).translate(rect.left_top().round().to_vec2());
 				
 				let c: [u8; 4] = data[addr..][..4].try_into().unwrap();
 				let [b, g, r, _] = c;
