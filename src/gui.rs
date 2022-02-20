@@ -1,4 +1,4 @@
-use std::time::{Instant, Duration};
+use std::time::Instant;
 
 use eframe::{egui, epi};
 
@@ -68,7 +68,8 @@ impl epi::App for EmuGui {
 	}
 	
 	fn setup(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-		use eframe::egui::{Color32, Stroke, Style, Visuals, style::{Widgets, WidgetVisuals}};
+		use eframe::egui::{Color32, Stroke, /*Rounding,*/ Style, Visuals};
+		use eframe::egui::style::{Widgets, WidgetVisuals};
 		
 		const DARK_MODE: bool = true;
 		
@@ -81,12 +82,14 @@ impl epi::App for EmuGui {
 					window_shadow: Default::default(),
 					collapsing_header_frame: true,
 					window_corner_radius: 0.0,
+					// window_rounding: Rounding::none(),
 					widgets: Widgets {
 						noninteractive: WidgetVisuals {
 							bg_fill: Color32::from_gray(16), // window background
 							bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
 							fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
 							corner_radius: 0.0,
+							// rounding: Rounding::none(),
 							expansion: 0.0,
 						},
 						..Widgets::dark()
@@ -104,12 +107,14 @@ impl epi::App for EmuGui {
 					window_shadow: Default::default(),
 					collapsing_header_frame: true,
 					window_corner_radius: 0.0,
+					// window_rounding: Rounding::none(),
 					widgets: Widgets {
 						noninteractive: WidgetVisuals {
 							bg_fill: Color32::from_gray(235), // window background
 							bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
 							fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
 							corner_radius: 0.0,
+							// rounding: Rounding::none(),
 							expansion: 0.0,
 						},
 						..Widgets::light()
@@ -126,15 +131,15 @@ impl epi::App for EmuGui {
 		let mut font_defs = FontDefinitions::default();
 		
 		let fonts = [
-			("emoji", "fonts/emoji.ttf"),
-			("sf_pro", "fonts/sf-pro.otf"),
-			("iosevka", "fonts/iosevka-term.ttf"),
+			// ("emoji",   include_bytes!("../fonts/emoji.ttf").to_vec()),
+			("sf_pro",  include_bytes!("../fonts/sf-pro.otf").to_vec()),
+			("iosevka", include_bytes!("../fonts/iosevka-term.ttf").to_vec()),
 		];
 		let fonts = fonts.map(
 			|(name, path)| {
 				let name = name.to_owned();
-				let file = std::fs::read(path).unwrap();
-				(name, file)
+				// let file = std::fs::read(path).unwrap();
+				(name, path)
 			}
 		);
 		
@@ -150,7 +155,7 @@ impl epi::App for EmuGui {
 			Monospace,
 			vec![
 				"iosevka".to_owned(),
-				"emoji".to_owned(),
+				// "emoji".to_owned(),
 			],
 		);
 		family.insert(
@@ -158,7 +163,7 @@ impl epi::App for EmuGui {
 			vec![
 				"sf_pro".to_owned(),
 				"iosevka".to_owned(),
-				"emoji".to_owned(),
+				// "emoji".to_owned(),
 			],
 		);
 		
@@ -197,7 +202,7 @@ impl epi::App for EmuGui {
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
 			if frame.is_web() {
-				ui.heading("💻 MIPS Emulator");
+				ui.heading("MIPS I Emulator");
 				ui.separator();
 			}
 			

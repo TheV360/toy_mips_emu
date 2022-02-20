@@ -1,3 +1,5 @@
 /target
 /program/out.*.bin
 /program/_*.asm
+/www/*.js
+/www/*.wasm

@@ -4,8 +4,12 @@ version = "0.1.0"
 authors = ["V360 <v360code@gmail.com>"]
 edition = "2021"
 
+[lib]
+crate_type = ["cdylib", "rlib"]
+
 [dependencies]
-eframe = { version = "0.16.0", default-features = false, features = ["egui_glium"] }
-# minifb = "0.20.0"
-# minifb = { git = "https://github.com/dc740/rust_minifb.git", branch = "wasm_websys_wip" }
-# font8x8 = "0.3"
+eframe = { version = "0.16", default-features = false, features = ["egui_glium"] }
+# eframe = { git = "https://github.com/emilk/egui", branch = "master", default-features = false, features = ["egui_glium"] }
+
+[profile.release]
+opt-level = 2
