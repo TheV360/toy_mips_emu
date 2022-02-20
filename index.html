@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+		<title>MIPS Emu (both are extinct)</title>
+		<style>
+html {
+	touch-action: manipulation;
+}
+html, body {
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	background: black;
+}
+canvas {
+	display: block;
+	margin: 0 auto;
+}
+		</style>
+	</head>
+	<body>
+		<noscript>This site uses fancy new WASM! Yada yada, you know what to do when you see this message.</noscript>
+		<canvas id="main_canvas"></canvas>
+		<script src="mips_emu.js"></script>
+		<script>
+			wasm_bindgen("./mips_emu_bg.wasm")
+			.then(go_ahead).catch(console.error);
+			
+			function go_ahead() {
+				console.log("Starting!");
+				wasm_bindgen.start("main_canvas");
+				console.log("...did it work?");
+			}
+		</script>
+	</body>
+</html>
