@@ -16,17 +16,20 @@ pub struct EmuGui {
 	scr_size: egui::Vec2,
 }
 
+#[allow(dead_code)]
 enum CpuTimer {
 	Micro { interval: u64, last: Option<Instant>, },
 	Frames { interval: f32, left: usize, },
 }
 impl CpuTimer {
 	/// Makes a `Micro`second timer
+	#[allow(dead_code)]
 	fn micro(interval: u64) -> Self {
 		CpuTimer::Micro { interval, last: None, }
 	}
 	
 	/// Makes a `Frame` timer
+	#[allow(dead_code)]
 	fn frames(interval: f32) -> Self {
 		CpuTimer::Frames { interval, left: 0, }
 	}
@@ -119,6 +122,10 @@ fn reset_cpu(cpu: &mut Cpu, reset_mem: bool) {
 impl epi::App for EmuGui {
 	fn name(&self) -> &str {
 		"Cool Swag MIPS Emulator"
+	}
+	
+	fn max_size_points(&self) -> egui::Vec2 {
+		egui::Vec2::splat(f32::INFINITY)
 	}
 	
 	fn setup(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
@@ -227,9 +234,6 @@ impl epi::App for EmuGui {
 	fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
 		let Self { cpu, .. } = self;
 		
-		// TODO: switch to chrono maybe for the interval stuff
-		//       (i found a way around things, but chrono is needed for wasm)
-		// TODO: merge memory viewer & "decomp" viewer.
 		// TODO: figure out what the hell will happen
 		// if someone wants to inspect a byte at a time instead of a word at a time...
 		// TODO: fix font sizes / maybe include some of my own fonts
