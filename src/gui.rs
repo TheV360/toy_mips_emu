@@ -8,13 +8,65 @@ use crate::display::mmio_display;
 pub struct EmuGui {
 	cpu: Cpu,
 	play: bool,
-	tick_ms: u64,
-	last_tick: Option<Instant>,
+	timer: CpuTimer,
 	mem_interp: MemoryInterpretation,
 	mem_look: MemoryPosition,
 	scr_look: usize,
 	scr_cells: (usize, usize),
 	scr_size: egui::Vec2,
+}
+
+enum CpuTimer {
+	Micro { interval: u64, last: Option<Instant>, },
+	Frames { interval: f32, left: usize, },
+}
+impl CpuTimer {
+	/// Makes a `Micro`second timer
+	fn micro(interval: u64) -> Self {
+		CpuTimer::Micro { interval, last: None, }
+	}
+	
+	/// Makes a `Frame` timer
+	fn frames(interval: f32) -> Self {
+		CpuTimer::Frames { interval, left: 0, }
+	}
+	
+	/// Returns how many times the CPU should step.
+	fn tick(&mut self) -> usize {
+		use CpuTimer::*;
+		match self {
+			Micro { interval, last } => {
+				let now = Instant::now();
+				match last {
+					None => { *last = Some(now); 0 },
+					Some(last_tick) => {
+						let since = now.duration_since(*last_tick);
+						let times = (since.as_micros() as u64 / *interval) as usize;
+						if times > 0 { *last = Some(now); }
+						times
+					}
+				}
+			},
+			Frames { interval, left } => {
+				if *left > 0 {
+					*left -= 1; 0
+				} else if *interval > 1.0 {
+					*left = interval.round() as usize; 1
+				} else {
+					interval.recip().round() as usize
+				}
+			},
+		}
+	}
+	
+	/// Resets the timer. Can be called while still reset, that's fine too.
+	fn reset(&mut self) {
+		use CpuTimer::*;
+		match self {
+			Micro { last, .. } => *last = None,
+			Frames { left, ..} => *left = 0,
+		}
+	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,8 +91,10 @@ impl Default for EmuGui {
 		EmuGui {
 			cpu,
 			play: false,
-			tick_ms: 100_000,
-			last_tick: None,
+			#[cfg(target_arch = "wasm32")]
+			timer: CpuTimer::frames(16.0),
+			#[cfg(not(target_arch = "wasm32"))]
+			timer: CpuTimer::micro(100_000),
 			mem_look: MemoryPosition::Position(0x00_0000),
 			mem_interp: MemoryInterpretation::Instruction,
 			scr_look: 0x01_0000,
@@ -182,22 +236,10 @@ impl epi::App for EmuGui {
 		
 		if cpu.halt { self.play = false; }
 		if self.play {
-			// TODO: is this good to use ?
-			let now = Instant::now();
-			match self.last_tick {
-				None => self.last_tick = Some(now),
-				Some(last_tick) => {
-					let since = now.duration_since(last_tick);
-					let times = since.as_micros() as u64 / self.tick_ms;
-					if times > 0 {
-						for _ in 0..times { cpu.tick(); }
-						self.last_tick = Some(now);
-					}
-				},
-			}
+			for _ in 0..self.timer.tick() { cpu.tick(); }
 			ctx.request_repaint();
 		} else {
-			self.last_tick = None;
+			self.timer.reset();
 		}
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
@@ -235,11 +277,23 @@ impl epi::App for EmuGui {
 					}
 				});
 				
-				ui.add(
-					egui::Slider::new(&mut self.tick_ms, 10..=10_000_000)
-						.suffix(" μs")
-						.logarithmic(true)
-				).on_hover_text("Frequency of CPU steps.\n10 μs = 1 step every 10 microseconds, and so on.");
+				use CpuTimer::*;
+				match &mut self.timer {
+					Micro { interval, .. } => {
+						ui.add(
+							egui::Slider::new(interval, 10..=10_000_000)
+								.suffix(" μs")
+								.logarithmic(true)
+						).on_hover_text("Frequency of CPU steps, in microseconds.\n10 μs = 1 step every 10 microseconds, and so on.");
+					},
+					Frames { interval, .. } => {
+						ui.add(
+							egui::Slider::new(interval, 0.001f32..=128.0f32)
+								.suffix(" fr")
+								.logarithmic(true)
+						).on_hover_text("Frequency of CPU steps, in frames.\nFractional frames means multiple steps per frame.");
+					},
+				}
 				
 				/*
 				ui.add(
