@@ -11,9 +11,13 @@ pub struct EmuGui {
 	timer: CpuTimer,
 	mem_interp: MemoryInterpretation,
 	mem_look: MemoryPosition,
-	scr_look: usize,
-	scr_cells: (usize, usize),
-	scr_size: egui::Vec2,
+	virt_screen: VirtScreen,
+}
+
+struct VirtScreen {
+	look: MemoryPosition,
+	cells: (usize, usize),
+	size: egui::Vec2,
 }
 
 #[allow(dead_code)]
@@ -105,9 +109,11 @@ impl Default for EmuGui {
 			timer: CpuTimer::micro(100_000),
 			mem_look: MemoryPosition::Position(0x00_0000),
 			mem_interp: MemoryInterpretation::Instruction,
-			scr_look: 0x01_0000,
-			scr_cells: (16, 16),
-			scr_size: egui::vec2(16.0, 16.0),
+			virt_screen: VirtScreen {
+				look: MemoryPosition::Position(0x01_0000),
+				cells: (16, 16),
+				size: egui::vec2(16.0, 16.0),
+			},
 		}
 	}
 }
@@ -459,9 +465,7 @@ impl EmuGui {
 	fn show_mmio_display(&mut self, ctx: &egui::CtxRef) {
 		let Self {
 			cpu,
-			scr_look,
-			scr_cells,
-			scr_size,
+			virt_screen,
 			..
 		} = self;
 		
@@ -469,13 +473,13 @@ impl EmuGui {
 			ui.horizontal(|ui| {
 				ui.label("Cells: ");
 				ui.add(
-					egui::DragValue::new(&mut scr_cells.0)
+					egui::DragValue::new(&mut virt_screen.cells.0)
 						.clamp_range(2..=128)
 						.speed(0.125)
 				);
 				ui.label("×");
 				ui.add(
-					egui::DragValue::new(&mut scr_cells.1)
+					egui::DragValue::new(&mut virt_screen.cells.1)
 						.clamp_range(2..=128)
 						.speed(0.125)
 				);
@@ -484,7 +488,7 @@ impl EmuGui {
 				
 				ui.label("Size: ");
 				ui.add(
-					egui::DragValue::new(&mut scr_size.x)
+					egui::DragValue::new(&mut virt_screen.size.x)
 						.max_decimals(0)
 						.clamp_range(4..=64)
 						.speed(0.125)
@@ -492,7 +496,7 @@ impl EmuGui {
 				);
 				ui.label("×");
 				ui.add(
-					egui::DragValue::new(&mut scr_size.y)
+					egui::DragValue::new(&mut virt_screen.size.y)
 						.max_decimals(0)
 						.clamp_range(4..=64)
 						.speed(0.125)
@@ -503,28 +507,36 @@ impl EmuGui {
 			ui.separator();
 			
 			ui.horizontal(|ui| {
-				ui.selectable_value(scr_look, 0x00_0000, ".text");
-				ui.selectable_value(scr_look, 0x00_2000, ".data");
-				ui.selectable_value(scr_look, 0x01_0000, "MMIO");
+				let vl = &mut virt_screen.look;
 				
-				if ui.add_enabled(
-					*scr_look > 0x00_0000, egui::Button::new("←").small()
-				).clicked() {
-					*scr_look = scr_look.saturating_sub(scr_cells.0 << 2);
-				}
-				if ui.add_enabled(
-					*scr_look < 0x01_0000, egui::Button::new("→").small()
-				).clicked() {
-					*scr_look = scr_look.saturating_add(scr_cells.0 << 2)
-						.min(0x01_0000);
+				ui.selectable_value(vl, MemoryPosition::ProgramCounter, "PC");
+				ui.selectable_value(vl, MemoryPosition::Position(0x00_0000), ".text");
+				ui.selectable_value(vl, MemoryPosition::Position(0x00_2000), ".data");
+				ui.selectable_value(vl, MemoryPosition::Position(0x01_0000), "MMIO");
+				
+				if let MemoryPosition::Position(look) = &mut virt_screen.look {
+					if ui.add_enabled(
+						*look > 0x00_0000, egui::Button::new("←").small()
+					).clicked() {
+						*look = look.saturating_sub((virt_screen.cells.0 as u32) << 2);
+					}
+					if ui.add_enabled(
+						*look < 0x01_0000, egui::Button::new("→").small()
+					).clicked() {
+						*look = look.saturating_add((virt_screen.cells.0 as u32) << 2).min(0x01_0000);
+					}
 				}
 			});
 			
 			ui.separator();
 			
-			let mem_take = scr_cells.0 * scr_cells.1 * 4;
+			let look = match virt_screen.look {
+				MemoryPosition::Position(n) => n,
+				MemoryPosition::ProgramCounter => cpu.pc,
+			} as usize;
+			let mem_take = virt_screen.cells.0 * virt_screen.cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, &cpu.mem[*scr_look..][..mem_take], *scr_cells, *scr_size);
+				mmio_display(ui, &cpu.mem[look..][..mem_take], virt_screen.cells, virt_screen.size);
 			});
 		});
 	}
