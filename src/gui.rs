@@ -18,7 +18,12 @@ pub struct EmuGui {
 
 #[allow(dead_code)]
 enum CpuTimer {
+	/// Timer that steps at a set interval in microseconds, using `std::time`.
+	/// Because of this, it will not work in WASM builds.
 	Micro { interval: u64, last: Option<Instant>, },
+	
+	/// Simpler timer that steps after a set amount of ticks. Not accurate at
+	/// all, but works well enough for WASM builds.
 	Frames { interval: f32, left: usize, },
 }
 impl CpuTimer {
@@ -428,8 +433,18 @@ impl EmuGui {
 						Text => {
 							let text = &cpu.mem[addr as usize..][..4];
 							let text = String::from_utf8_lossy(text)
-								.into_owned()
-								.replace('\n', "␊");
+								.into_owned();
+							
+							let text = text.chars().map(|c| {
+								match c as u32 {
+									0x00..=0x1F => {
+										char::from_u32(c as u32 + 0x2400)
+										.unwrap_or(char::REPLACEMENT_CHARACTER)
+									},
+									0x7F => '\u{2421}',
+									_ => c,
+								}
+							}).collect::<String>();
 							
 							ui.monospace(text);
 						}
