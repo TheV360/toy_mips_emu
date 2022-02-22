@@ -139,8 +139,8 @@ impl epi::App for EmuGui {
 		egui::Vec2::splat(f32::INFINITY)
 	}
 	
-	fn setup(&mut self, ctx: &egui::CtxRef, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-		use eframe::egui::{Color32, Stroke, /*Rounding,*/ Style, Visuals};
+	fn setup(&mut self, ctx: &egui::Context, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
+		use eframe::egui::{Color32, Stroke, Rounding, Style, Visuals};
 		use eframe::egui::style::{Widgets, WidgetVisuals};
 		
 		const DARK_MODE: bool = true;
@@ -153,15 +153,13 @@ impl epi::App for EmuGui {
 					popup_shadow: Default::default(),
 					window_shadow: Default::default(),
 					collapsing_header_frame: true,
-					window_corner_radius: 0.0,
-					// window_rounding: Rounding::none(),
+					window_rounding: Rounding::none(),
 					widgets: Widgets {
 						noninteractive: WidgetVisuals {
 							bg_fill: Color32::from_gray(16), // window background
 							bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
 							fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
-							corner_radius: 0.0,
-							// rounding: Rounding::none(),
+							rounding: Rounding::none(),
 							expansion: 0.0,
 						},
 						..Widgets::dark()
@@ -178,15 +176,13 @@ impl epi::App for EmuGui {
 					popup_shadow: Default::default(),
 					window_shadow: Default::default(),
 					collapsing_header_frame: true,
-					window_corner_radius: 0.0,
-					// window_rounding: Rounding::none(),
+					window_rounding: Rounding::none(),
 					widgets: Widgets {
 						noninteractive: WidgetVisuals {
 							bg_fill: Color32::from_gray(235), // window background
 							bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
 							fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
-							corner_radius: 0.0,
-							// rounding: Rounding::none(),
+							rounding: Rounding::none(),
 							expansion: 0.0,
 						},
 						..Widgets::light()
@@ -221,7 +217,7 @@ impl epi::App for EmuGui {
 			data.insert(name, FontData::from_owned(file));
 		}
 		
-		let family = &mut font_defs.fonts_for_family;
+		let family = &mut font_defs.families;
 		
 		family.insert(
 			Monospace,
@@ -242,7 +238,7 @@ impl epi::App for EmuGui {
 		ctx.set_fonts(font_defs);
 	}
 	
-	fn update(&mut self, ctx: &egui::CtxRef, frame: &epi::Frame) {
+	fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
 		let Self { cpu, .. } = self;
 		
 		// TODO: figure out what the hell will happen
@@ -332,7 +328,7 @@ impl epi::App for EmuGui {
 }
 
 impl EmuGui {
-	fn show_register_monitor(&mut self, ctx: &egui::CtxRef) {
+	fn show_register_monitor(&mut self, ctx: &egui::Context) {
 		let Self { cpu, .. } = self;
 		
 		egui::Window::new("Register Monitor")
@@ -359,7 +355,7 @@ impl EmuGui {
 		});
 	}
 	
-	fn show_memory_monitor(&mut self, ctx: &egui::CtxRef) {
+	fn show_memory_monitor(&mut self, ctx: &egui::Context) {
 		let Self { cpu, .. } = self;
 		
 		egui::Window::new("Memory Monitor").show(ctx, |ui| {
@@ -462,7 +458,7 @@ impl EmuGui {
 		});
 	}
 	
-	fn show_mmio_display(&mut self, ctx: &egui::CtxRef) {
+	fn show_mmio_display(&mut self, ctx: &egui::Context) {
 		let Self {
 			cpu,
 			virt_screen,
@@ -471,7 +467,7 @@ impl EmuGui {
 		
 		egui::Window::new("Virtual Display").show(ctx, |ui| {
 			ui.horizontal(|ui| {
-				ui.label("Cells: ");
+				ui.label("Cells:");
 				ui.add(
 					egui::DragValue::new(&mut virt_screen.cells.0)
 						.clamp_range(2..=128)
@@ -486,7 +482,7 @@ impl EmuGui {
 				
 				ui.separator();
 				
-				ui.label("Size: ");
+				ui.label("Size:");
 				ui.add(
 					egui::DragValue::new(&mut virt_screen.size.x)
 						.max_decimals(0)
