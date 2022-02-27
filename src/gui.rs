@@ -6,6 +6,7 @@ use crate::chip::{Cpu, Register};
 use crate::display::mmio_display;
 
 pub struct EmuGui {
+	dark_theme: bool,
 	cpu: Cpu,
 	play: bool,
 	timer: CpuTimer,
@@ -101,6 +102,7 @@ impl Default for EmuGui {
 		reset_cpu(&mut cpu, false);
 		
 		EmuGui {
+			dark_theme: true,
 			cpu,
 			play: false,
 			#[cfg(target_arch = "wasm32")]
@@ -130,9 +132,70 @@ fn reset_cpu(cpu: &mut Cpu, reset_mem: bool) {
 	cpu.pc = 0x00_0000;
 }
 
+fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
+	use eframe::egui::{Color32, Stroke, Rounding, Style, Visuals};
+	use eframe::egui::style::{Widgets, WidgetVisuals};
+	
+	let style = if dark_theme {
+		Style {
+			animation_time: 0.0,
+			visuals: Visuals {
+				dark_mode: false,
+				popup_shadow: Default::default(),
+				window_shadow: Default::default(),
+				collapsing_header_frame: true,
+				window_rounding: Rounding::none(),
+				widgets: Widgets {
+					noninteractive: WidgetVisuals {
+						bg_fill: Color32::from_gray(16), // window background
+						bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
+						fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
+						rounding: Rounding::none(),
+						expansion: 0.0,
+					},
+					..Widgets::dark()
+				},
+				..Visuals::dark()
+			},
+			..Default::default()
+		}
+	} else {
+		Style {
+			animation_time: 0.0,
+			visuals: Visuals {
+				dark_mode: false,
+				popup_shadow: Default::default(),
+				window_shadow: Default::default(),
+				collapsing_header_frame: true,
+				window_rounding: Rounding::none(),
+				widgets: Widgets {
+					noninteractive: WidgetVisuals {
+						bg_fill: Color32::from_gray(235), // window background
+						bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
+						fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
+						rounding: Rounding::none(),
+						expansion: 0.0,
+					},
+					inactive: WidgetVisuals {
+						bg_fill: Color32::from_gray(210),
+						bg_stroke: Stroke::new(1.0, Color32::from_gray(190)),
+						fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
+						rounding: Rounding::none(),
+						expansion: 0.0,
+					},
+					..Widgets::light()
+				},
+				..Visuals::light()
+			},
+			..Default::default()
+		}
+	};
+	ctx.set_style(style);
+}
+
 impl epi::App for EmuGui {
 	fn name(&self) -> &str {
-		"Cool Swag MIPS Emulator"
+		"Toy MIPS I Emulator"
 	}
 	
 	fn max_size_points(&self) -> egui::Vec2 {
@@ -140,61 +203,9 @@ impl epi::App for EmuGui {
 	}
 	
 	fn setup(&mut self, ctx: &egui::Context, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-		use eframe::egui::{Color32, Stroke, Rounding, Style, Visuals};
-		use eframe::egui::style::{Widgets, WidgetVisuals};
-		
-		const DARK_MODE: bool = true;
-		
-		let style = if DARK_MODE {
-			Style {
-				animation_time: 0.0,
-				visuals: Visuals {
-					dark_mode: false,
-					popup_shadow: Default::default(),
-					window_shadow: Default::default(),
-					collapsing_header_frame: true,
-					window_rounding: Rounding::none(),
-					widgets: Widgets {
-						noninteractive: WidgetVisuals {
-							bg_fill: Color32::from_gray(16), // window background
-							bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
-							fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
-							rounding: Rounding::none(),
-							expansion: 0.0,
-						},
-						..Widgets::dark()
-					},
-					..Visuals::dark()
-				},
-				..Default::default()
-			}
-		} else {
-			Style {
-				animation_time: 0.0,
-				visuals: Visuals {
-					dark_mode: false,
-					popup_shadow: Default::default(),
-					window_shadow: Default::default(),
-					collapsing_header_frame: true,
-					window_rounding: Rounding::none(),
-					widgets: Widgets {
-						noninteractive: WidgetVisuals {
-							bg_fill: Color32::from_gray(235), // window background
-							bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
-							fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
-							rounding: Rounding::none(),
-							expansion: 0.0,
-						},
-						..Widgets::light()
-					},
-					..Visuals::light()
-				},
-				..Default::default()
-			}
-		};
-		ctx.set_style(style);
-		
 		use eframe::egui::{FontDefinitions, FontData, FontFamily::*};
+		
+		set_ui_theme(ctx, true);
 		
 		let mut font_defs = FontDefinitions::default();
 		
@@ -255,11 +266,23 @@ impl epi::App for EmuGui {
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
 			if frame.is_web() {
-				ui.heading("MIPS I Emulator");
+				ui.horizontal(|ui| {
+					ui.heading("Toy MIPS I Emulator");
+					ui.separator();
+					ui.hyperlink_to("GitHub Repository", "https://github.com/TheV360/toy_mips_emu");
+				});
 				ui.separator();
 			}
 			
 			ui.horizontal(|ui| {
+				let theme_str = if self.dark_theme { "Lite" } else { "Dark" };
+				if ui.small_button(theme_str).clicked() {
+					self.dark_theme = !self.dark_theme;
+					set_ui_theme(ctx, self.dark_theme);
+				}
+				
+				ui.separator();
+				
 				ui.monospace(format!("PC: 0x{:08X}", cpu.pc));
 				
 				ui.separator();
