@@ -23,9 +23,9 @@ canvas {
 	<body>
 		<noscript>This site uses fancy new WASM! Yada yada, you know what to do when you see this message.</noscript>
 		<canvas id="main_canvas"></canvas>
-		<script src="mips_emu.js"></script>
+		<script src="mips_emulator_gui.js"></script>
 		<script>
-			wasm_bindgen("./mips_emu_bg.wasm")
+			wasm_bindgen("./mips_emulator_gui_bg.wasm")
 			.then(go_ahead).catch(console.error);
 			
 			function go_ahead() {
