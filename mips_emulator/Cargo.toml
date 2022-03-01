@@ -1,0 +1,7 @@
+[package]
+name = "mips_emulator"
+version = "0.1.0"
+authors = ["V360 <v360code@gmail.com>"]
+edition = "2021"
+
+[dependencies]

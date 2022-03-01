@@ -1,0 +1,13 @@
+[package]
+name = "mips_emulator_gui"
+version = "0.1.0"
+authors = ["V360 <v360code@gmail.com>"]
+edition = "2021"
+
+[lib]
+crate_type = ["cdylib", "rlib"]
+
+[dependencies]
+mips_emulator = { path = "../mips_emulator" }
+eframe = { version = "0.17", default-features = false, features = ["egui_glium"] }
+# eframe = { git = "https://github.com/emilk/egui", branch = "master", default-features = false, features = ["egui_glium"] }
