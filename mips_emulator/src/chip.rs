@@ -1,6 +1,4 @@
-#[allow(non_camel_case_types)]
-type word = u32;
-const WORD_BYTES: usize = word::BITS as usize / 8;
+use super::{word, WORD_BYTES, mem::Memory};
 
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
@@ -78,23 +76,11 @@ pub enum InsFormat {
 	Sys,
 }
 
+#[derive(Default)]
 pub struct Cpu {
-	pub mem: Box<[u8; 0xFF_FFFF]>,
 	pub reg: [word; 32],
 	pub pc: word,
 	pub halt: bool,
-}
-impl Default for Cpu {
-	fn default() -> Self {
-		let mem = vec![0u8; 0xFF_FFFF].into_boxed_slice();
-		let mem = mem.try_into().expect("This should never fail.");
-		Cpu {
-			mem,
-			reg: Default::default(),
-			pc: Default::default(),
-			halt: false,
-		}
-	}
 }
 
 impl core::ops::Index<Register> for Cpu {
@@ -109,42 +95,18 @@ impl core::ops::IndexMut<Register> for Cpu {
 	}
 }
 
-// your gonna have to have the RAM with the register state
-// because syscalls fuck everything up. sorry about it.
-// also it's a von neumann machine.. instructions Will be
-// with everything else.
-// and you can't increment the pc after exiting do_instruction,
-// since jump instructions'll thing.
-
 impl Cpu {
-	pub const REGISTER_SIZE: word = 0x20 - 1;
+	/// Register size as in size of a register in the condensed bytecode repr.
+	/// And honestly it's more for masking out unrelated bytes, which is why
+	/// it's subtracted by 1.
+	const REGISTER_SIZE: word = 0x20 - 1;
 	
-	pub fn get_byte(&self, addr: word) -> u8 {
-		self.mem[addr as usize]
+	pub fn tick(&mut self, mem: &mut Memory) {
+		self.do_instruction(mem.get_word(self.pc).unwrap(), mem);
+		self.pc += WORD_BYTES as word;
 	}
 	
-	pub fn get_word(&self, addr: word) -> word {
-		assert_eq!(addr % 4, 0, "Tried to get word not on boundary! Better error message soon? lol");
-		let addr = addr as usize;
-		let w = &self.mem[addr..][..WORD_BYTES];
-		word::from_le_bytes(w.try_into().unwrap())
-	}
-	
-	pub fn set_byte(&mut self, addr: word, val: u8) {
-		self.mem[addr as usize] = val;
-	}
-	
-	pub fn set_word(&mut self, addr: word, val: word) {
-		assert_eq!(addr % 4, 0, "Tried to get word not on boundary! Better error message soon? lol");
-		let addr = addr as usize;
-		self.mem[addr..][..WORD_BYTES].copy_from_slice(&val.to_le_bytes());
-	}
-	
-	pub fn tick(&mut self) {
-		self.do_instruction(self.get_word(self.pc));
-	}
-	
-	pub fn do_instruction(&mut self, ins: word) {
+	pub fn do_instruction(&mut self, ins: word, mem: &mut Memory) {
 		use Register::*;
 		
 		if self.halt { return; }
@@ -172,7 +134,7 @@ impl Cpu {
 				/*srl  */ 0x02 => self[rd] = self[rt] >> shamt,
 				/*jr   */ 0x08 => self.pc = self[rs] - WORD_BYTES as word,
 				/*jalr */ 0x09 => { self[ra] = self.pc; self.pc = self[rs] - WORD_BYTES as word; },
-				/*well.*/ 0x0c => self.do_syscall(),
+				/*well.*/ 0x0c => self.do_syscall(mem),
 				/*add  */ 0x20 => self[rd] = (self[rs] as i32 + self[rt] as i32) as u32,
 				/*addu */ 0x21 => self[rd] = self[rs].wrapping_add(self[rt]),
 				/*sub  */ 0x22 => self[rd] = (self[rs] as i32 - self[rt] as i32) as u32,
@@ -185,7 +147,7 @@ impl Cpu {
 				/*sltu */ 0x2b => self[rd] = (self[rs] < self[rt]) as u32,
 				_ => panic!("no impl for {opcode:02x} fn {function:02x}"),
 			},
-			/*j    */ 0x02 => self.pc = j_addr - WORD_BYTES as word, // TODO: well it's sucks
+			/*j    */ 0x02 => self.pc = j_addr - WORD_BYTES as word,
 			/*jal  */ 0x03 => { self[ra] = self.pc; self.pc = j_addr - WORD_BYTES as word; },
 			/*beq  */ 0x04 => if self[rs] == self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
 			/*bne  */ 0x05 => if self[rs] != self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
@@ -196,16 +158,14 @@ impl Cpu {
 			/*ori  */ 0x0d => self[rt] = self[rs] | imm,
 			/*xori */ 0x0e => self[rt] = self[rs] ^ imm,
 			/*lui  */ 0x0f => self[rt] = imm << 16,
-			/*lw   */ 0x23 => self[rt] = self.get_word(self[rs] + se_imm),
-			/*lbu  */ 0x24 => self[rt] = self.get_byte(self[rs] + se_imm) as word,
-			/*lhu  */ 0x25 => self[rt] = self.get_word(self[rs] + se_imm) & 0xFFFF, // TODO: wasteful
-			/*sb   */ 0x28 => self.set_byte(self[rs] + se_imm, (self[rt] & 0xFF) as u8),
-			/*sh   */ 0x29 => self.set_word(self[rs] + se_imm, self[rt] & 0xFFFF), // TODO: also wasteful
-			/*sw   */ 0x2b => self.set_word(self[rs] + se_imm, self[rt]),
+			/*lw   */ 0x23 => self[rt] = mem.get_word(self[rs] + se_imm).unwrap(),
+			/*lbu  */ 0x24 => self[rt] = mem.get_byte(self[rs] + se_imm).unwrap() as word,
+			/*lhu  */ 0x25 => self[rt] = mem.get_word(self[rs] + se_imm).unwrap() & 0xFFFF,
+			/*sb   */ 0x28 => { mem.set_byte(self[rs] + se_imm, (self[rt] & 0xFF) as u8); },
+			/*sh   */ 0x29 => { mem.set_word(self[rs] + se_imm, self[rt] & 0xFFFF); },
+			/*sw   */ 0x2b => { mem.set_word(self[rs] + se_imm, self[rt]); },
 			_ => panic!("no impl for {opcode:02x}"),
 		}
-		
-		self.pc += WORD_BYTES as word;
 	}
 	
 	pub fn get_instruction_info(&self, ins: word) -> Option<(&'static str, InsFormat)> {
@@ -282,11 +242,11 @@ impl Cpu {
 		}
 	}
 	
-	// TODO: this should be implemented outside the chip,
-	//       as in real MIPS processors, this raises an exception
+	// TODO: this should maybe be implemented outside the chip,
+	//       as in real MIPS processors this raises an exception
 	//       that the environment must then acknowledge. seems
 	//       much better than what i have going on here.
-	pub fn do_syscall(&mut self) {
+	pub fn do_syscall(&mut self, mem: &mut Memory) {
 		use Register::*;
 		
 		let service = self[v0];
@@ -295,11 +255,12 @@ impl Cpu {
 		match service {
 			1 => print!("{arg0}"),
 			4 => {
-				let mut str_ptr = arg0 as usize;
-				while self.mem[str_ptr] != 0 {
-					str_ptr += 1;
-				}
-				let s = &self.mem[arg0 as usize..str_ptr];
+				let str_start = arg0 as usize;
+				let str_len =
+					mem.0[str_start..]
+					.iter().position(|&x| x == 0)
+					.unwrap_or(0);
+				let s = &mem.0[str_start..][..str_len];
 				let s = std::str::from_utf8(s).expect("Dang it");
 				print!("{s}");
 			},
@@ -332,13 +293,14 @@ mod tests {
 		use Register::*;
 		
 		let mut cpu = Cpu::default();
+		let mut mem = Memory::default();
 		
 		cpu[t1] = 32; cpu[t2] = 3;
-		cpu.do_instruction(op_r(0x20, t0, t1, t2, 0));
+		cpu.do_instruction(op_r(0x20, t0, t1, t2, 0), &mut mem);
 		assert_eq!(cpu[t0], 32 + 3);
 		
 		cpu[t4] = 10;
-		cpu.do_instruction(op_r(0x00, t3, zero, t4, 2));
+		cpu.do_instruction(op_r(0x00, t3, zero, t4, 2), &mut mem);
 		assert_eq!(cpu[t3], 10 << 2);
 	}
 	
@@ -347,13 +309,14 @@ mod tests {
 		use Register::*;
 		
 		let mut cpu = Cpu::default();
+		let mut mem = Memory::default();
 		
 		//addiu $sp, $sp, -4 pls
 		
 		// 0x09 $t1, $t1, -16 maybe.
 		
 		cpu[t1] = 32;
-		cpu.do_instruction(op(0x09, op_i(t1, t1, -16)));
+		cpu.do_instruction(op(0x09, op_i(t1, t1, -16)), &mut mem);
 		
 		println!("{:08x}", cpu[t1]);
 		assert_eq!(cpu[t1], 16);

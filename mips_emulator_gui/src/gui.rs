@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use eframe::{egui, epi};
 
+use mips_emulator::mem::Memory;
 use mips_emulator::chip::{Cpu, Register};
 
 use crate::display::mmio_display;
@@ -9,6 +10,7 @@ use crate::display::mmio_display;
 pub struct EmuGui {
 	dark_theme: bool,
 	cpu: Cpu,
+	mem: Memory,
 	play: bool,
 	timer: CpuTimer,
 	mem_interp: MemoryInterpretation,
@@ -100,11 +102,12 @@ const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
 impl Default for EmuGui {
 	fn default() -> Self {
 		let mut cpu = Cpu::default();
-		reset_cpu(&mut cpu, false);
+		let mut mem = Memory::default();
+		reset_state(&mut cpu, Some(&mut mem));
 		
 		EmuGui {
 			dark_theme: true,
-			cpu,
+			cpu, mem,
 			play: false,
 			#[cfg(target_arch = "wasm32")]
 			timer: CpuTimer::frames(16.0),
@@ -121,16 +124,18 @@ impl Default for EmuGui {
 	}
 }
 
-fn reset_cpu(cpu: &mut Cpu, reset_mem: bool) {
+fn reset_state(cpu: &mut Cpu, mem: Option<&mut Memory>) {
 	cpu.halt = false;
 	cpu[Register::gp] = 0x1800;
 	cpu[Register::sp] = 0x3FFC;
-	
-	if reset_mem { cpu.mem.fill(0); }
-	
-	cpu.mem[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
-	cpu.mem[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
 	cpu.pc = 0x00_0000;
+	
+	if let Some(mem) = mem {
+		mem.0.fill(0);
+		
+		mem.0[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
+		mem.0[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
+	}
 }
 
 fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
@@ -251,7 +256,7 @@ impl epi::App for EmuGui {
 	}
 	
 	fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-		let Self { cpu, .. } = self;
+		let Self { cpu, mem, .. } = self;
 		
 		// TODO: figure out what the hell will happen
 		// if someone wants to inspect a byte at a time instead of a word at a time...
@@ -259,7 +264,7 @@ impl epi::App for EmuGui {
 		
 		if cpu.halt { self.play = false; }
 		if self.play {
-			for _ in 0..self.timer.tick() { cpu.tick(); }
+			for _ in 0..self.timer.tick() { cpu.tick(mem); }
 			ctx.request_repaint();
 		} else {
 			self.timer.reset();
@@ -292,7 +297,7 @@ impl epi::App for EmuGui {
 				.on_hover_text("Resets the CPU's state -- the memory,\nthe registers, the PC, everything.")
 				.clicked() {
 					println!("~~ Reset CPU ~~");
-					reset_cpu(cpu, true);
+					reset_state(cpu, Some(mem));
 				}
 				
 				ui.add_enabled_ui(!cpu.halt, |ui| {
@@ -300,7 +305,7 @@ impl epi::App for EmuGui {
 					.on_hover_text("Steps the CPU forward a single instruction.")
 					.on_disabled_hover_text("The CPU has halted, and needs to reset\nbefore it can do more.")
 					.clicked() {
-						cpu.tick();
+						cpu.tick(mem);
 					}
 					
 					let play_text = if self.play { "⏸" } else { "▶" };
@@ -380,7 +385,7 @@ impl EmuGui {
 	}
 	
 	fn show_memory_monitor(&mut self, ctx: &egui::Context) {
-		let Self { cpu, .. } = self;
+		let Self { cpu, mem, .. } = self;
 		
 		egui::Window::new("Memory Monitor").show(ctx, |ui| {
 			use MemoryPosition::*;
@@ -443,12 +448,12 @@ impl EmuGui {
 					}
 					ui.monospace(format!("0x{addr:08X}"));
 					
-					let word = cpu.get_word(addr);
+					let word = mem.get_word(addr).unwrap();
 					ui.monospace(format!("0x{word:08X}"));
 					
 					match self.mem_interp {
 						Instruction => {
-							let ins = cpu.get_word(addr);
+							let ins = mem.get_word(addr).unwrap();
 							
 							if let Some(disasm) = cpu.get_disassembly(ins) {
 								ui.monospace(disasm);
@@ -457,7 +462,7 @@ impl EmuGui {
 							}
 						},
 						Text => {
-							let text = &cpu.mem[addr as usize..][..4];
+							let text = &mem.0[addr as usize..][..4];
 							let text = String::from_utf8_lossy(text)
 								.into_owned();
 							
@@ -484,7 +489,7 @@ impl EmuGui {
 	
 	fn show_mmio_display(&mut self, ctx: &egui::Context) {
 		let Self {
-			cpu,
+			cpu, mem,
 			virt_screen,
 			..
 		} = self;
@@ -556,7 +561,7 @@ impl EmuGui {
 			} as usize;
 			let mem_take = virt_screen.cells.0 * virt_screen.cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, &cpu.mem[look..][..mem_take], virt_screen.cells, virt_screen.size);
+				mmio_display(ui, &mem.0[look..][..mem_take], virt_screen.cells, virt_screen.size);
 			});
 		});
 	}
