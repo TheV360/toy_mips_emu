@@ -5,3 +5,6 @@ authors = ["V360 <v360code@gmail.com>"]
 edition = "2021"
 
 [dependencies]
+
+[[example]]
+name = "mips_dump"

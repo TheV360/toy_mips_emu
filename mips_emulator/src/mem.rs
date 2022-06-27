@@ -13,8 +13,7 @@ impl Memory {
 	
 	/// Note: this fn doesn't check if this is an aligned read.
 	pub fn get_word(&self, addr: word) -> Option<word> {
-		let addr = addr as usize;
-		let source = self.0.get(addr..(addr + WORD_BYTES));
+		let source = self.0.get(addr as usize..(addr + WORD_BYTES) as usize);
 		source.map(|x| word::from_le_bytes(x.try_into().unwrap()))
 	}
 	
@@ -25,8 +24,7 @@ impl Memory {
 	
 	/// Returns `Some` only if the operation succeeded.
 	pub fn set_word(&mut self, addr: word, val: word) -> Option<()> {
-		let addr = addr as usize;
-		let dest = self.0.get_mut(addr..(addr + WORD_BYTES));
+		let dest = self.0.get_mut(addr as usize..(addr + WORD_BYTES) as usize);
 		dest.map(|x| x.copy_from_slice(&val.to_le_bytes()))
 	}
 }

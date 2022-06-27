@@ -1,6 +1,6 @@
 # Toy MIPS I Emulator
 
-This is supposed to emulate a good bit of a MIPS I chip or whatever. I currently have a good bit of the main instruction set and basic syscalls implemented. I'd like to get exceptions and floating-point stuff working sometime. Maybe even a basic assembler later?
+This is supposed to emulate a good bit of a 32-bit MIPS I chip or whatever. I currently have a good bit of the main instruction set and basic syscalls implemented. I'd like to get exceptions and floating-point stuff working sometime. Maybe even a basic assembler later?
 
 It's built in **Rust**! With **eframe**! Here's a screenshot:
 
@@ -13,7 +13,7 @@ It's built in **Rust**! With **eframe**! Here's a screenshot:
 
 ## Building
 
-You'll need [MARS](http://courses.missouristate.edu/KenVollmar/MARS/) and Java (to run MARS).
+If you don't have a program already at the ready, you'll need [MARS](http://courses.missouristate.edu/KenVollmar/MARS/) and Java (to run MARS).
 
 - clone the repository
 - modify `program/build.sh` to point to the right paths

@@ -1,88 +1,38 @@
-use std::time::Instant;
-
-use eframe::{egui, epi};
+use eframe::egui;
 
 use mips_emulator::mem::Memory;
 use mips_emulator::chip::{Cpu, Register};
 
+use crate::util;
+
 use crate::display::mmio_display;
+use crate::timer::CpuTimer;
 
 pub struct EmuGui {
 	dark_theme: bool,
-	cpu: Cpu,
+	cpus: Vec<Core>,
 	mem: Memory,
+	screen: VirtScreen,
+}
+
+struct Core {
+	// naming is kinda screwed up but...
+	inner: Cpu,
 	play: bool,
 	timer: CpuTimer,
-	mem_interp: MemoryInterpretation,
-	mem_look: MemoryPosition,
-	virt_screen: VirtScreen,
+	
+	mem_win: MemoryWindowState,
+}
+
+struct MemoryWindowState {
+	look: MemoryPosition,
+	interp: MemoryInterpretation,
 }
 
 struct VirtScreen {
 	look: MemoryPosition,
 	cells: (usize, usize),
 	size: egui::Vec2,
-}
-
-#[allow(dead_code)]
-enum CpuTimer {
-	/// Timer that steps at a set interval in microseconds, using `std::time`.
-	/// Because of this, it will not work in WASM builds.
-	Micro { interval: u64, last: Option<Instant>, },
-	
-	/// Simpler timer that steps after a set amount of ticks. Not accurate at
-	/// all, but works well enough for WASM builds.
-	Frames { interval: f32, left: usize, },
-}
-impl CpuTimer {
-	/// Makes a `Micro`second timer
-	#[allow(dead_code)]
-	fn micro(interval: u64) -> Self {
-		CpuTimer::Micro { interval, last: None, }
-	}
-	
-	/// Makes a `Frame` timer
-	#[allow(dead_code)]
-	fn frames(interval: f32) -> Self {
-		CpuTimer::Frames { interval, left: 0, }
-	}
-	
-	/// Returns how many times the CPU should step.
-	fn tick(&mut self) -> usize {
-		use CpuTimer::*;
-		match self {
-			Micro { interval, last } => {
-				let now = Instant::now();
-				match last {
-					None => { *last = Some(now); 0 },
-					Some(last_tick) => {
-						let since = now.duration_since(*last_tick);
-						let times = (since.as_micros() as u64 / *interval) as usize;
-						if times > 0 { *last = Some(now); }
-						times
-					}
-				}
-			},
-			Frames { interval, left } => {
-				if *left > 0 {
-					*left -= 1; 0
-				} else if *interval > 1.0 {
-					*left = interval.round() as usize; 1
-				} else {
-					interval.recip().round() as usize
-				}
-			},
-		}
-	}
-	
-	/// Resets the timer. Can be called while still reset, that's fine too.
-	fn reset(&mut self) {
-		use CpuTimer::*;
-		match self {
-			Micro { last, .. } => *last = None,
-			Frames { left, ..} => *left = 0,
-		}
-	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,21 +51,51 @@ const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
 
 impl Default for EmuGui {
 	fn default() -> Self {
-		let mut cpu = Cpu::default();
 		let mut mem = Memory::default();
-		reset_state(&mut cpu, Some(&mut mem));
+		reset_mem(&mut mem);
 		
 		EmuGui {
 			dark_theme: true,
-			cpu, mem,
-			play: false,
-			#[cfg(target_arch = "wasm32")]
-			timer: CpuTimer::frames(16.0),
-			#[cfg(not(target_arch = "wasm32"))]
-			timer: CpuTimer::micro(100_000),
-			mem_look: MemoryPosition::Position(0x00_0000),
-			mem_interp: MemoryInterpretation::Instruction,
-			virt_screen: VirtScreen {
+			cpus: vec![
+				Core {
+					inner: {
+						let mut cpu = Cpu::default();
+						reset_cpu(&mut cpu);
+						cpu
+					},
+					play: false,
+					
+					#[cfg(target_arch = "wasm32")]
+					timer: CpuTimer::frames(16.0),
+					#[cfg(not(target_arch = "wasm32"))]
+					timer: CpuTimer::micro(100_000),
+					
+					mem_win: MemoryWindowState {
+						look: MemoryPosition::ProgramCounter,
+						interp: MemoryInterpretation::Instruction,
+					},
+				},
+				Core {
+					inner: {
+						let mut cpu = Cpu::default();
+						reset_cpu(&mut cpu);
+						cpu
+					},
+					play: false,
+					
+					#[cfg(target_arch = "wasm32")]
+					timer: CpuTimer::frames(18.0),
+					#[cfg(not(target_arch = "wasm32"))]
+					timer: CpuTimer::micro(110_000),
+					
+					mem_win: MemoryWindowState {
+						look: MemoryPosition::ProgramCounter,
+						interp: MemoryInterpretation::Instruction,
+					},
+				},
+			],
+			mem,
+			screen: VirtScreen {
 				look: MemoryPosition::Position(0x01_0000),
 				cells: (16, 16),
 				size: egui::vec2(16.0, 16.0),
@@ -124,150 +104,37 @@ impl Default for EmuGui {
 	}
 }
 
-fn reset_state(cpu: &mut Cpu, mem: Option<&mut Memory>) {
-	cpu.halt = false;
+fn reset_cpu(cpu: &mut Cpu) {
+	cpu.cp0.halt = false;
 	cpu[Register::gp] = 0x1800;
 	cpu[Register::sp] = 0x3FFC;
 	cpu.pc = 0x00_0000;
-	
-	if let Some(mem) = mem {
-		mem.0.fill(0);
-		
-		mem.0[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
-		mem.0[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
-	}
 }
 
-fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
-	use eframe::egui::{Color32, Stroke, Rounding, Style, Visuals};
-	use eframe::egui::style::{Widgets, WidgetVisuals};
+fn reset_mem(mem: &mut Memory) {
+	mem.0.fill(0);
 	
-	let style = if dark_theme {
-		Style {
-			animation_time: 0.0,
-			visuals: Visuals {
-				dark_mode: false,
-				popup_shadow: Default::default(),
-				window_shadow: Default::default(),
-				collapsing_header_frame: true,
-				window_rounding: Rounding::none(),
-				widgets: Widgets {
-					noninteractive: WidgetVisuals {
-						bg_fill: Color32::from_gray(16), // window background
-						bg_stroke: Stroke::new(1.0, Color32::from_gray(64)), // separators, indentation lines, window outlines
-						fg_stroke: Stroke::new(1.0, Color32::WHITE), // normal text color
-						rounding: Rounding::none(),
-						expansion: 0.0,
-					},
-					..Widgets::dark()
-				},
-				..Visuals::dark()
-			},
-			..Default::default()
-		}
-	} else {
-		Style {
-			animation_time: 0.0,
-			visuals: Visuals {
-				dark_mode: false,
-				popup_shadow: Default::default(),
-				window_shadow: Default::default(),
-				collapsing_header_frame: true,
-				window_rounding: Rounding::none(),
-				widgets: Widgets {
-					noninteractive: WidgetVisuals {
-						bg_fill: Color32::from_gray(235), // window background
-						bg_stroke: Stroke::new(1.0, Color32::from_gray(190)), // separators, indentation lines, window outlines
-						fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
-						rounding: Rounding::none(),
-						expansion: 0.0,
-					},
-					inactive: WidgetVisuals {
-						bg_fill: Color32::from_gray(210),
-						bg_stroke: Stroke::new(1.0, Color32::from_gray(190)),
-						fg_stroke: Stroke::new(1.0, Color32::BLACK), // normal text color
-						rounding: Rounding::none(),
-						expansion: 0.0,
-					},
-					..Widgets::light()
-				},
-				..Visuals::light()
-			},
-			..Default::default()
-		}
-	};
-	ctx.set_style(style);
+	mem.0[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
+	mem.0[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
 }
 
-impl epi::App for EmuGui {
-	fn name(&self) -> &str {
-		"Toy MIPS I Emulator"
-	}
-	
-	fn max_size_points(&self) -> egui::Vec2 {
-		egui::Vec2::splat(f32::INFINITY)
-	}
-	
-	fn setup(&mut self, ctx: &egui::Context, _frame: &epi::Frame, _storage: Option<&dyn epi::Storage>) {
-		use eframe::egui::{FontDefinitions, FontData, FontFamily::*};
-		
-		set_ui_theme(ctx, true);
-		
-		let mut font_defs = FontDefinitions::default();
-		
-		let fonts = [
-			// ("emoji",   include_bytes!("../fonts/emoji.ttf").to_vec()),
-			("sf_pro",  include_bytes!("../fonts/sf-pro.otf").to_vec()),
-			("iosevka", include_bytes!("../fonts/iosevka-term.ttf").to_vec()),
-		];
-		let fonts = fonts.map(
-			|(name, path)| {
-				let name = name.to_owned();
-				// let file = std::fs::read(path).unwrap();
-				(name, path)
-			}
-		);
-		
-		let data = &mut font_defs.font_data;
-		
-		for (name, file) in fonts {
-			data.insert(name, FontData::from_owned(file));
-		}
-		
-		let family = &mut font_defs.families;
-		
-		family.insert(
-			Monospace,
-			vec![
-				"iosevka".to_owned(),
-				// "emoji".to_owned(),
-			],
-		);
-		family.insert(
-			Proportional,
-			vec![
-				"sf_pro".to_owned(),
-				"iosevka".to_owned(),
-				// "emoji".to_owned(),
-			],
-		);
-		
-		ctx.set_fonts(font_defs);
-	}
-	
-	fn update(&mut self, ctx: &egui::Context, frame: &epi::Frame) {
-		let Self { cpu, mem, .. } = self;
+impl eframe::App for EmuGui {
+	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+		let Self { cpus: cores, mem, .. } = self;
 		
 		// TODO: figure out what the hell will happen
 		// if someone wants to inspect a byte at a time instead of a word at a time...
-		// TODO: fix font sizes / maybe include some of my own fonts
 		
-		if cpu.halt { self.play = false; }
-		if self.play {
-			for _ in 0..self.timer.tick() { cpu.tick(mem); }
-			ctx.request_repaint();
-		} else {
-			self.timer.reset();
+		for core in cores.iter_mut() {
+			if core.inner.cp0.halt { core.play = false; }
+			if core.play {
+				let ticked = core.timer.tick();
+				for _ in 0..ticked { core.inner.tick(mem); }
+				// if ticked > 0 { ctx.request_repaint(); }
+				ctx.request_repaint();
+			} else {
+				core.timer.reset();
+			}
 		}
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
@@ -284,65 +151,69 @@ impl epi::App for EmuGui {
 				let theme_str = if self.dark_theme { "Lite" } else { "Dark" };
 				if ui.small_button(theme_str).clicked() {
 					self.dark_theme = !self.dark_theme;
-					set_ui_theme(ctx, self.dark_theme);
+					util::set_ui_theme(ctx, self.dark_theme);
 				}
-				
+				ui.separator();
+				if ui.button("Open...").clicked() {
+					
+				}
+			});
+			
+			for (i, core) in cores.iter_mut().enumerate() {
 				ui.separator();
 				
-				ui.monospace(format!("PC: 0x{:08X}", cpu.pc));
-				
-				ui.separator();
-				
-				if ui.button("Reset")
-				.on_hover_text("Resets the CPU's state -- the memory,\nthe registers, the PC, everything.")
-				.clicked() {
-					println!("~~ Reset CPU ~~");
-					reset_state(cpu, Some(mem));
-				}
-				
-				ui.add_enabled_ui(!cpu.halt, |ui| {
-					if ui.add_enabled(!self.play, egui::Button::new("Step"))
-					.on_hover_text("Steps the CPU forward a single instruction.")
-					.on_disabled_hover_text("The CPU has halted, and needs to reset\nbefore it can do more.")
+				ui.horizontal(|ui| {
+					ui.monospace(format!("Core {}", i + 1));
+					
+					ui.separator();
+					
+					ui.monospace(format!("PC: 0x{:08X}", core.inner.pc));
+					
+					ui.separator();
+					
+					if ui.button("Reset")
+					.on_hover_text("Resets the CPU's state -- the memory,\nthe registers, the PC, everything.")
 					.clicked() {
-						cpu.tick(mem);
+						println!("~~ Reset CPU ~~");
+						reset_cpu(&mut core.inner);
+						reset_mem(mem);
 					}
 					
-					let play_text = if self.play { "⏸" } else { "▶" };
-					if ui.button(play_text)
-					.on_hover_text("Play or pause execution.")
-					.on_disabled_hover_text("The CPU has halted, and needs to reset\nbefore it can do more.")
-					.clicked() {
-						self.play = !self.play;
+					ui.add_enabled_ui(!core.inner.cp0.halt, |ui| {
+						if ui.add_enabled(!core.play, egui::Button::new("Step"))
+						.on_hover_text("Steps the CPU forward a single instruction.")
+						.on_disabled_hover_text("The CPU has halted, and needs to reset\nbefore it can do more.")
+						.clicked() {
+							core.inner.tick(mem);
+						}
+						
+						let play_text = if core.play { "⏸" } else { "▶" };
+						if ui.button(play_text)
+						.on_hover_text("Play or pause execution.")
+						.on_disabled_hover_text("The CPU has halted, and needs to reset\nbefore it can do more.")
+						.clicked() {
+							core.play = !core.play;
+						}
+					});
+					
+					match &mut core.timer {
+						CpuTimer::Micro { interval, .. } => {
+							ui.add(
+								egui::Slider::new(interval, 10..=10_000_000u64)
+									.suffix(" μs")
+									.logarithmic(true)
+							).on_hover_text("Frequency of CPU steps, in microseconds.\n10 μs = 1 step every 10 microseconds, and so on.");
+						},
+						CpuTimer::Frames { interval, .. } => {
+							ui.add(
+								egui::Slider::new(interval, 0.001f32..=128.0f32)
+									.suffix(" fr")
+									.logarithmic(true)
+							).on_hover_text("Frequency of CPU steps, in frames.\nFractional frames means multiple steps per frame.");
+						},
 					}
 				});
-				
-				use CpuTimer::*;
-				match &mut self.timer {
-					Micro { interval, .. } => {
-						ui.add(
-							egui::Slider::new(interval, 10..=10_000_000)
-								.suffix(" μs")
-								.logarithmic(true)
-						).on_hover_text("Frequency of CPU steps, in microseconds.\n10 μs = 1 step every 10 microseconds, and so on.");
-					},
-					Frames { interval, .. } => {
-						ui.add(
-							egui::Slider::new(interval, 0.001f32..=128.0f32)
-								.suffix(" fr")
-								.logarithmic(true)
-						).on_hover_text("Frequency of CPU steps, in frames.\nFractional frames means multiple steps per frame.");
-					},
-				}
-				
-				/*
-				ui.add(
-					egui::Slider::new(&mut self.tick_ms, 10..=10_000_000)
-						.suffix(" Hz")
-						.logarithmic(true)
-				).on_hover_text("Frequency of CPU steps.\n10 Hz = 10 steps every second, and so on -- to a ludicrous degree.");
-				*/
-			});
+			}
 		});
 		
 		egui::CentralPanel::default().show(ctx, |_|());
@@ -357,140 +228,149 @@ impl epi::App for EmuGui {
 }
 
 impl EmuGui {
-	fn show_register_monitor(&mut self, ctx: &egui::Context) {
-		let Self { cpu, .. } = self;
+	fn show_register_monitor(&self, ctx: &egui::Context) {
+		let Self { cpus: cores, .. } = self;
 		
-		egui::Window::new("Register Monitor")
-			.resizable(false)
-			.show(ctx,
-		|ui| {
-			egui::Grid::new("Registers")
-				.striped(true)
-				.show(ui,
+		for (i, core) in cores.iter().enumerate() {
+			egui::Window::new(format!("Register Monitor (Core {})", i + 1))
+				.resizable(false)
+				.show(ctx,
 			|ui| {
-				for reg in 0..32 {
-					let reg_e = Register::from(reg);
-					let reg_val = cpu[reg_e];
-					
-					ui.vertical_centered(|ui| {
-						ui.set_min_width(80.0);
-						ui.label(format!("{reg_e:?} ({reg:02})"));
-						ui.monospace(format!("0x{reg_val:08X}"));
-					});
-					
-					if reg % 4 == 3 { ui.end_row(); }
-				}
+				egui::Grid::new("Registers")
+					.striped(true)
+					.show(ui,
+				|ui| {
+					for reg in 0..32 {
+						let reg_e = Register::from(reg);
+						let reg_val = core.inner[reg_e];
+						
+						ui.vertical_centered(|ui| {
+							ui.set_min_width(80.0);
+							ui.label(format!("{reg_e:?} ({reg:02})"));
+							ui.monospace(format!("0x{reg_val:08X}"));
+						});
+						
+						if reg % 4 == 3 { ui.end_row(); }
+					}
+				});
 			});
-		});
+		}
 	}
 	
 	fn show_memory_monitor(&mut self, ctx: &egui::Context) {
-		let Self { cpu, mem, .. } = self;
+		let Self { cpus: cores, mem, .. } = self;
 		
-		egui::Window::new("Memory Monitor").show(ctx, |ui| {
+		for (i, core) in cores.iter_mut().enumerate() {
 			use MemoryPosition::*;
 			use MemoryInterpretation::*;
 			// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/scrolling.rs
 			// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/mod.rs
 			
-			let mem_looked = match self.mem_look {
-				ProgramCounter => (cpu.pc >> 2).saturating_sub(3) << 2,
-				Position(p) => p,
-			};
-			
-			ui.horizontal(|ui| {
-				let ml = &mut self.mem_look;
-				let mi = &mut self.mem_interp;
+			let title = format!("Memory Monitor (Core {})", i + 1);
+			egui::Window::new(title).show(ctx, |ui| {
+				let MemoryWindowState {
+					look,
+					interp
+				} = &mut core.mem_win;
 				
-				egui::ComboBox::from_id_source("Memory Interpretation")
-					.selected_text(format!("{:?}", mi))
-					.show_ui(ui,
-				|ui| {
-					ui.selectable_value(mi, Instruction, "Instruction");
-					ui.selectable_value(mi, Text, "Text (UTF-8)");
-				});
+				let looked = match look {
+					ProgramCounter => (core.inner.pc >> 2).saturating_sub(3) << 2,
+					Position(p) => *p,
+				};
 				
-				ui.selectable_value(ml, ProgramCounter, "PC");
-				ui.selectable_value(ml, Position(0x00_0000), ".text");
-				ui.selectable_value(ml, Position(0x00_2000), ".data");
-				ui.selectable_value(ml, Position(0x01_0000), "MMIO");
-				
-				if let Position(pos) = ml {
-					if ui.small_button("←").clicked() {
-						*pos = pos.saturating_sub(0x10);
-					}
-					if ui.small_button("→").clicked() {
-						*pos = pos.saturating_add(0x10);
-					}
-				}
-			});
-			
-			ui.separator();
-			
-			egui::Grid::new("Memory")
-				.striped(true)
-				.min_col_width(32.0)
-				.show(ui,
-			|ui| {
-				for i in 0..16u32 {
-					let addr = mem_looked.saturating_add(i << 2);
+				ui.horizontal(|ui| {
 					
-					if cpu.pc == addr {
-						ui.add(
-							egui::Label::new(
-								egui::RichText::new("→")
-								.color(egui::Color32::BLACK)
-								.background_color(egui::Color32::from_rgb(255, 255, 0))
-							)
-						);
-					} else {
-						ui.label("");
-					}
-					ui.monospace(format!("0x{addr:08X}"));
+					egui::ComboBox::from_id_source("Memory Interpretation")
+						.selected_text(format!("{:?}", interp))
+						.show_ui(ui,
+					|ui| {
+						ui.selectable_value(interp, Instruction, "Instruction");
+						ui.selectable_value(interp, Text, "Text (UTF-8)");
+					});
 					
-					let word = mem.get_word(addr).unwrap();
-					ui.monospace(format!("0x{word:08X}"));
+					ui.selectable_value(look, ProgramCounter, "PC");
+					ui.selectable_value(look, Position(0x00_0000), ".text");
+					ui.selectable_value(look, Position(0x00_2000), ".data");
+					ui.selectable_value(look, Position(0x01_0000), "MMIO");
 					
-					match self.mem_interp {
-						Instruction => {
-							let ins = mem.get_word(addr).unwrap();
-							
-							if let Some(disasm) = cpu.get_disassembly(ins) {
-								ui.monospace(disasm);
-							} else {
-								ui.label("No idea");
-							}
-						},
-						Text => {
-							let text = &mem.0[addr as usize..][..4];
-							let text = String::from_utf8_lossy(text)
-								.into_owned();
-							
-							let text = text.chars().map(|c| {
-								match c as u32 {
-									0x00..=0x1F => {
-										char::from_u32(c as u32 + 0x2400)
-										.unwrap_or(char::REPLACEMENT_CHARACTER)
-									},
-									0x7F => '\u{2421}',
-									_ => c,
-								}
-							}).collect::<String>();
-							
-							ui.monospace(text);
+					if let Position(pos) = look {
+						if ui.small_button("←").clicked() {
+							*pos = pos.saturating_sub(0x10);
+						}
+						if ui.small_button("→").clicked() {
+							*pos = pos.saturating_add(0x10);
 						}
 					}
-					
-					ui.end_row();
-				}
+				});
+				
+				ui.separator();
+				
+				egui::Grid::new("Memory")
+					.striped(true)
+					.min_col_width(32.0)
+					.show(ui,
+				|ui| {
+					for i in 0..16u32 {
+						let addr = looked.saturating_add(i << 2);
+						
+						if core.inner.pc == addr {
+							ui.add(
+								egui::Label::new(
+									egui::RichText::new("→")
+									.color(egui::Color32::BLACK)
+									.background_color(egui::Color32::from_rgb(255, 255, 0))
+								)
+							);
+						} else {
+							ui.label("");
+						}
+						ui.monospace(format!("0x{addr:08X}"));
+						
+						let word = mem.get_word(addr).unwrap();
+						ui.monospace(format!("0x{word:08X}"));
+						
+						match core.mem_win.interp {
+							Instruction => {
+								let ins = mem.get_word(addr).unwrap();
+								
+								if let Some(disasm) = Cpu::get_disassembly(ins) {
+									ui.monospace(disasm);
+								} else {
+									ui.label("No idea");
+								}
+							},
+							Text => {
+								let text = &mem.0[addr as usize..][..4];
+								let text = String::from_utf8_lossy(text)
+									.into_owned();
+								
+								let text = text.chars().map(|c| {
+									match c as u32 {
+										0x00..=0x1F => {
+											char::from_u32(c as u32 + 0x2400)
+											.unwrap_or(char::REPLACEMENT_CHARACTER)
+										},
+										0x7F => '\u{2421}',
+										_ => c,
+									}
+								}).collect::<String>();
+								
+								ui.monospace(text);
+							}
+						}
+						
+						ui.end_row();
+					}
+				});
 			});
-		});
+		}
 	}
 	
 	fn show_mmio_display(&mut self, ctx: &egui::Context) {
 		let Self {
-			cpu, mem,
-			virt_screen,
+			cpus,
+			mem,
+			screen,
 			..
 		} = self;
 		
@@ -498,13 +378,13 @@ impl EmuGui {
 			ui.horizontal(|ui| {
 				ui.label("Cells:");
 				ui.add(
-					egui::DragValue::new(&mut virt_screen.cells.0)
+					egui::DragValue::new(&mut screen.cells.0)
 						.clamp_range(2..=128)
 						.speed(0.125)
 				);
 				ui.label("×");
 				ui.add(
-					egui::DragValue::new(&mut virt_screen.cells.1)
+					egui::DragValue::new(&mut screen.cells.1)
 						.clamp_range(2..=128)
 						.speed(0.125)
 				);
@@ -513,55 +393,61 @@ impl EmuGui {
 				
 				ui.label("Size:");
 				ui.add(
-					egui::DragValue::new(&mut virt_screen.size.x)
+					egui::DragValue::new(&mut screen.size.x)
 						.max_decimals(0)
 						.clamp_range(4..=64)
 						.speed(0.125)
 						.suffix("px")
 				);
-				ui.label("×");
-				ui.add(
-					egui::DragValue::new(&mut virt_screen.size.y)
-						.max_decimals(0)
-						.clamp_range(4..=64)
-						.speed(0.125)
-						.suffix("px")
-				);
+				screen.size.y = screen.size.x;
+				// ui.label("×");
+				// ui.add(
+				// 	egui::DragValue::new(&mut screen.size.y)
+				// 		.max_decimals(0)
+				// 		.clamp_range(4..=64)
+				// 		.speed(0.125)
+				// 		.suffix("px")
+				// );
 			});
 			
 			ui.separator();
 			
 			ui.horizontal(|ui| {
-				let vl = &mut virt_screen.look;
+				let vl = &mut screen.look;
 				
 				ui.selectable_value(vl, MemoryPosition::ProgramCounter, "PC");
 				ui.selectable_value(vl, MemoryPosition::Position(0x00_0000), ".text");
 				ui.selectable_value(vl, MemoryPosition::Position(0x00_2000), ".data");
 				ui.selectable_value(vl, MemoryPosition::Position(0x01_0000), "MMIO");
 				
-				if let MemoryPosition::Position(look) = &mut virt_screen.look {
+				if let MemoryPosition::Position(look) = &mut screen.look {
 					if ui.add_enabled(
 						*look > 0x00_0000, egui::Button::new("←").small()
 					).clicked() {
-						*look = look.saturating_sub((virt_screen.cells.0 as u32) << 2);
+						*look = look.saturating_sub((screen.cells.0 as u32) << 2);
 					}
 					if ui.add_enabled(
 						*look < 0x01_0000, egui::Button::new("→").small()
 					).clicked() {
-						*look = look.saturating_add((virt_screen.cells.0 as u32) << 2).min(0x01_0000);
+						*look = look.saturating_add((screen.cells.0 as u32) << 2).min(0x01_0000);
 					}
 				}
 			});
 			
 			ui.separator();
 			
-			let look = match virt_screen.look {
+			let look = match screen.look {
 				MemoryPosition::Position(n) => n,
-				MemoryPosition::ProgramCounter => cpu.pc,
+				MemoryPosition::ProgramCounter => {
+					cpus.iter()
+						.find(|core| core.play)
+						.map(|core| core.inner.pc)
+						.unwrap_or_default()
+				},
 			} as usize;
-			let mem_take = virt_screen.cells.0 * virt_screen.cells.1 * 4;
+			let mem_take = screen.cells.0 * screen.cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, &mem.0[look..][..mem_take], virt_screen.cells, virt_screen.size);
+				mmio_display(ui, &mem.0[look..][..mem_take], screen.cells, screen.size);
 			});
 		});
 	}
