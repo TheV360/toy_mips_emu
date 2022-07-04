@@ -54,7 +54,8 @@ impl From<usize> for Register {
 	}
 }
 
-#[repr(u8)]
+#[repr(usize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cp0Register {
 	/// Memory address where access/write exception occurred (if any)
 	BadVAddr = 8,
@@ -119,28 +120,6 @@ pub enum ExceptionCause {
 	Fpe = 15,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InsFormat {
-	/// "Result" format
-	/// -- Saves the result of an operation on two registers
-	/// into the `rd` register.
-	R,
-	
-	/// "Immediate" format
-	/// -- Saves the result of an operation between a register
-	/// and an immediate value into the `rt`/`rs` register.
-	/// (`rs` only if using store operations.)
-	I,
-	
-	/// "Jump" format
-	/// -- Jumps to the specified address.
-	J,
-	
-	/// "`syscall`" format
-	/// -- `syscall`.
-	Sys,
-}
-
 #[derive(Default)]
 pub struct Cpu {
 	pub reg: [word; 32],
@@ -178,11 +157,39 @@ impl core::ops::IndexMut<Cp0Register> for Cp0 {
 	}
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InsFormat {
+	/// "Result" format
+	/// -- Saves the result of an operation on two registers
+	/// into the `rd` register.
+	R,
+	
+	/// "Immediate" format
+	/// -- Saves the result of an operation between a register
+	/// and an immediate value into the `rt`/`rs` register.
+	/// (`rs` only if using store operations.)
+	I,
+	
+	/// "Jump" format
+	/// -- Jumps to the specified address.
+	J,
+	
+	/// "`syscall`" format
+	/// -- `syscall`.
+	Sys,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Opcode {
-	General(usize), // -> 0x??
-	Function(usize), // -> 0x00 0x??
-	Coprocessor(usize), // -> 0x10 0x??
+	/// Typical opcode
+	General(word), // -> 0x??
+	
+	/// Opcode `0x00` contains several different functions.
+	Function(word), // -> 0x00 0x??
+	
+	/// Not sure if this is gonna cover all coprocessor stuff. We'll see.
+	/// It's under opcode `0x10`.
+	Coprocessor(word), // -> 0x10 0x??
 }
 
 impl Cpu {
@@ -191,7 +198,7 @@ impl Cpu {
 	const REGISTER_SIZE: usize = 5;
 	
 	/// Table of operations
-	const OPERATIONS: &'static [(Opcode, &'static str, InsFormat)] = {
+	const INSTRUCTIONS: &'static [(Opcode, &'static str, InsFormat)] = {
 		use Opcode::*; use InsFormat::*;
 	&[
 		(Function(0x00), "sll"      , R),
@@ -256,21 +263,27 @@ impl Cpu {
 		
 		match opcode {
 			0x00 => match function {
-				/*sll  */ 0x00 => self[rd] = self[rt] << shamt,
-				/*srl  */ 0x02 => self[rd] = self[rt] >> shamt,
+				/* sll */ 0x00 => self[rd] = self[rt] << shamt,
+				/* srl */ 0x02 => self[rd] = self[rt] >> shamt,
 				
-				// jr :: TODO: handle branch delay slot
-				0x08 => self.pc = self[rs] - WORD_BYTES as word,
+				// TODO: handle branch delay slot
+				/*jr   */ 0x08 => self.pc = self[rs] - WORD_BYTES as word,
 				
 				/*jalr */ 0x09 => { self[ra] = self.pc; self.pc = self[rs] - WORD_BYTES as word; },
-				/*sys📞*/ 0x0c => self.exception(ExceptionCause::Sys),
-				/*add  */ 0x20 => self[rd] = (self[rs] as i32 + self[rt] as i32) as u32,
+				/*sys☎*/ 0x0c => self.exception(ExceptionCause::Sys),
+				
+				// add :: integer overflow exception
+				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) }
 				
 				// addu :: no overflow exceptions ever
 				0x21 => self[rd] = self[rs].wrapping_add(self[rt]),
 				
-				/*sub  */ 0x22 => self[rd] = (self[rs] as i32 - self[rt] as i32) as u32,
-				/*subu */ 0x23 => self[rd] = self[rs].wrapping_sub(self[rt]),
+				// sub :: integer overflow exception
+				0x22 => if let Some(a) = (self[rs] as i32).checked_sub(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) },
+				
+				// subu :: no overflow exceptions ever
+				0x23 => self[rd] = self[rs].wrapping_sub(self[rt]),
+				
 				/*and  */ 0x24 => self[rd] = self[rs] & self[rt],
 				/*or   */ 0x25 => self[rd] = self[rs] | self[rt],
 				/*xor  */ 0x26 => self[rd] = self[rs] ^ self[rt],
@@ -301,54 +314,17 @@ impl Cpu {
 	}
 	
 	pub fn get_instruction_info(ins: word) -> Option<(&'static str, InsFormat)> {
-		use InsFormat::*;
-		
 		let opcode = bits_span(ins, 26, 6);
-		let function = bits_span(ins, 0, 6);
-		let coprocessor = bits_span(ins, 21, 5); // ???
+		let opcode_ty = match opcode {
+			0x00 => Opcode::Function(bits_span(ins, 0, 6)),
+			0x10 => Opcode::Coprocessor(bits_span(ins, 21, 5)),
+			_    => Opcode::General(opcode),
+		};
 		
-		match opcode {
-			0x00 => match function {
-				0x00 => Some(("sll"      , R)),
-				0x02 => Some(("srl"      , R)),
-				0x08 => Some(("jr"       , J)),
-				0x09 => Some(("jalr"     , J)),
-				0x0c => Some(("syscall", Sys)),
-				0x20 => Some(("add"      , R)),
-				0x21 => Some(("addu"     , R)),
-				0x22 => Some(("sub"      , R)),
-				0x23 => Some(("subu"     , R)),
-				0x24 => Some(("and"      , R)),
-				0x25 => Some(("or"       , R)),
-				0x26 => Some(("xor"      , R)),
-				0x27 => Some(("nor"      , R)),
-				0x2a => Some(("slt"      , R)),
-				0x2b => Some(("sltu"     , R)),
-				_ => None,
-			},
-			0x02 => Some(("j"    , J)),
-			0x03 => Some(("jal"  , J)),
-			0x04 => Some(("beq"  , I)),
-			0x05 => Some(("bne"  , I)),
-			0x08 => Some(("addi" , I)),
-			0x09 => Some(("addiu", I)),
-			0x0a => Some(("slti" , I)),
-			0x0b => Some(("sltiu", I)),
-			0x0d => Some(("ori"  , I)),
-			0x0e => Some(("xori" , I)),
-			0x0f => Some(("lui"  , I)),
-			0x10 => match coprocessor {
-				0 => Some(("mfc0", R)),
-				_ => None,
-			},
-			0x23 => Some(("lw"   , I)),
-			0x24 => Some(("lbu"  , I)),
-			0x25 => Some(("lhu"  , I)),
-			0x28 => Some(("sb"   , I)),
-			0x29 => Some(("sh"   , I)),
-			0x2b => Some(("sw"   , I)),
-			_ => None,
-		}
+		Self::INSTRUCTIONS
+			.iter().cloned()
+			.find(|(other, _, _)| opcode_ty == *other)
+			.map(|(_, ident, fmt)| (ident, fmt))
 	}
 	
 	pub fn get_disassembly(ins: word) -> Option<String> {
@@ -361,15 +337,15 @@ impl Cpu {
 			
 			match ins_fmt {
 				R => {
-					let shamt = (ins >> 6) & 0x1F;
+					let shamt = bits_span(ins, 6, 5);
 					Some(format!("{ins_name} ${rd:?}, ${rs:?}, ${rt:?}; {shamt}"))
 				},
 				I => {
-					let imm = ins & 0xFFFF;
+					let imm = bits_span(ins, 0, 16);
 					Some(format!("{ins_name} ${rt:?}, ${rs:?}, 0x{imm:X}"))
 				},
 				J => {
-					let j_addr = (ins & 0x03FF_FFFF) << 2;
+					let j_addr = bits_span(ins, 0, 26) << 2;
 					Some(format!("{ins_name} 0x{j_addr:08X}"))
 				},
 				Sys => Some("syscall".to_owned()),
@@ -379,22 +355,21 @@ impl Cpu {
 		}
 	}
 	
-	// TODO: this should maybe be implemented outside the chip,
-	//       as in real MIPS processors this raises an exception
-	//       that the environment must then acknowledge. seems
-	//       much better than what i have going on here.
 	fn exception(&mut self, cause: ExceptionCause, ) {
-		// TODO: kinda wish you could pass in an "instruction" struct
-		// into this function and it can derive what badvaddr was used
-		// and such
 		use Register::*; use Cp0Register::*;
 		self.cp0[EPC] = self.pc;
-		let cause: u8 = cause as u8;
+		self.cp0[Cause] |= (cause as u32) << 2;
+		// TODO: easy way to determine if cause is from this instruction or if
+		//       it's an interrupt that just so happened to stop this instr.
+		// (so that UI can easily display '!' or ';' on the EPC)
+		// ⚠ ? ⋯ ?
+		
+		// self.pc = 0x8000_0080; // TODO: ahaha.. error handling. ...
+		//                       // bc i do want have cfg'able memory layout
+		//                      // maybe just.. suck it up and impl mem paging.
 	}
 	
-	fn overflow(&mut self) {
-		unimplemented!()
-	}
+	fn overflow(&mut self) { self.exception(ExceptionCause::Ov) }
 }
 
 #[cfg(test)]

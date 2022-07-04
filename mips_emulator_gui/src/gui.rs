@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use mips_emulator::mem::Memory;
-use mips_emulator::chip::{Cpu, Register};
+use mips_emulator::chip::{Cpu, Register, Cp0Register};
 
 use crate::util;
 
@@ -22,6 +22,11 @@ struct Core {
 	timer: CpuTimer,
 	
 	mem_win: MemoryWindowState,
+	reg_state: RegisterMonitorState,
+}
+
+enum RegisterMonitorState {
+	Cpu, Cp0,
 }
 
 struct MemoryWindowState {
@@ -74,6 +79,7 @@ impl Default for EmuGui {
 						look: MemoryPosition::ProgramCounter,
 						interp: MemoryInterpretation::Instruction,
 					},
+					reg_state: RegisterMonitorState::Cpu,
 				},
 				Core {
 					inner: {
@@ -92,6 +98,7 @@ impl Default for EmuGui {
 						look: MemoryPosition::ProgramCounter,
 						interp: MemoryInterpretation::Instruction,
 					},
+					reg_state: RegisterMonitorState::Cp0,
 				},
 			],
 			mem,
@@ -106,6 +113,8 @@ impl Default for EmuGui {
 
 fn reset_cpu(cpu: &mut Cpu) {
 	cpu.cp0.halt = false;
+	cpu.cp0[Cp0Register::EPC] = 0xFFFF;
+	
 	cpu[Register::gp] = 0x1800;
 	cpu[Register::sp] = 0x3FFC;
 	cpu.pc = 0x00_0000;
@@ -167,7 +176,7 @@ impl eframe::App for EmuGui {
 					
 					ui.separator();
 					
-					ui.monospace(format!("PC: 0x{:08X}", core.inner.pc));
+					ui.monospace(format!("PC: {:#010X}", core.inner.pc));
 					
 					ui.separator();
 					
@@ -236,23 +245,42 @@ impl EmuGui {
 				.resizable(false)
 				.show(ctx,
 			|ui| {
-				egui::Grid::new("Registers")
-					.striped(true)
-					.show(ui,
-				|ui| {
-					for reg in 0..32 {
-						let reg_e = Register::from(reg);
-						let reg_val = core.inner[reg_e];
-						
-						ui.vertical_centered(|ui| {
-							ui.set_min_width(80.0);
-							ui.label(format!("{reg_e:?} ({reg:02})"));
-							ui.monospace(format!("0x{reg_val:08X}"));
-						});
-						
-						if reg % 4 == 3 { ui.end_row(); }
-					}
-				});
+				use RegisterMonitorState::*;
+				match core.reg_state {
+					Cpu =>
+					egui::Grid::new("RegistersCpu")
+						.striped(true)
+						.show(ui, |ui| {
+							for reg in 0..32 {
+								let reg_e = Register::from(reg);
+								let reg_val = core.inner[reg_e];
+								
+								ui.vertical_centered(|ui| {
+									ui.set_min_width(80.0);
+									ui.label(format!("{reg_e:?} ({reg:02})"));
+									ui.monospace(format!("{reg_val:#010X}"));
+								});
+								
+								if reg % 4 == 3 { ui.end_row(); }
+							}
+						}),
+					Cp0 =>
+					egui::Grid::new("RegistersCp0")
+						.striped(true)
+						.show(ui, |ui| {
+							use Cp0Register::*;
+							for reg_e in [ BadVAddr, Status, Cause, EPC ] {
+								let reg = reg_e as usize;
+								let reg_val = core.inner.cp0[reg_e];
+								
+								ui.label(format!("{reg_e:?} ({reg:02})"));
+								ui.monospace(format!("{reg_val:#010X}"));
+								ui.monospace(format!("{reg_val:#034b}"));
+								ui.end_row();
+							}
+						})
+				}
+				// TODO: let user switch between these lol
 			});
 		}
 	}
@@ -313,21 +341,30 @@ impl EmuGui {
 					for i in 0..16u32 {
 						let addr = looked.saturating_add(i << 2);
 						
-						if core.inner.pc == addr {
+						let pc = core.inner.pc;
+						let epc = core.inner.cp0[Cp0Register::EPC];
+						
+						let line_highlight = match addr {
+							_ if addr == pc => Some(("→", egui::Color32::BLACK, egui::Color32::from_rgb(255, 255, 0))),
+							_ if addr == epc => Some(("⚠", egui::Color32::WHITE, egui::Color32::RED)),
+							_ => None,
+						};
+						
+						if let Some((label, color, bg_color)) = line_highlight {
 							ui.add(
-								egui::Label::new(
-									egui::RichText::new("→")
-									.color(egui::Color32::BLACK)
-									.background_color(egui::Color32::from_rgb(255, 255, 0))
+							egui::Label::new(
+								egui::RichText::new(label)
+								.color(color)
+								.background_color(bg_color)
 								)
 							);
 						} else {
 							ui.label("");
 						}
-						ui.monospace(format!("0x{addr:08X}"));
+						ui.monospace(format!("{addr:#010X}"));
 						
 						let word = mem.get_word(addr).unwrap();
-						ui.monospace(format!("0x{word:08X}"));
+						ui.monospace(format!("{word:#010X}"));
 						
 						match core.mem_win.interp {
 							Instruction => {
@@ -336,7 +373,7 @@ impl EmuGui {
 								if let Some(disasm) = Cpu::get_disassembly(ins) {
 									ui.monospace(disasm);
 								} else {
-									ui.label("No idea");
+									ui.label("Invalid");
 								}
 							},
 							Text => {
@@ -344,16 +381,9 @@ impl EmuGui {
 								let text = String::from_utf8_lossy(text)
 									.into_owned();
 								
-								let text = text.chars().map(|c| {
-									match c as u32 {
-										0x00..=0x1F => {
-											char::from_u32(c as u32 + 0x2400)
-											.unwrap_or(char::REPLACEMENT_CHARACTER)
-										},
-										0x7F => '\u{2421}',
-										_ => c,
-									}
-								}).collect::<String>();
+								let text = text.chars()
+									.map(util::replace_control_char)
+									.collect::<String>();
 								
 								ui.monospace(text);
 							}
