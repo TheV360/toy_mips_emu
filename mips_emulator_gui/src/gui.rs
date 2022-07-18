@@ -29,7 +29,7 @@ impl Default for Core {
 		Core {
 			inner: Cpu::default(),
 			play: false,
-
+			
 			#[cfg(target_arch = "wasm32")]
 			timer: CpuTimer::frames(16.0),
 			#[cfg(not(target_arch = "wasm32"))]
@@ -125,10 +125,13 @@ fn reset_cpu(cpu: &mut Cpu) {
 }
 
 fn reset_mem(mem: &mut Memory) {
-	mem.0.fill(0);
+	mem.clear();
+	mem.write_slice(0x00_0000, PRG_TEXT);
+	mem.write_slice(0x00_2000, PRG_DATA);
 	
-	mem.0[0x00_0000..][..PRG_TEXT.len()].copy_from_slice(PRG_TEXT);
-	mem.0[0x00_2000..][..PRG_DATA.len()].copy_from_slice(PRG_DATA);
+	// HACK: init MMIO page because I'm lazy.
+	// I later access it directly, which is a sin.
+	mem.set_byte(0x01_0000, 0);
 }
 
 impl eframe::App for EmuGui {
@@ -324,23 +327,23 @@ impl EmuGui {
 						ui.label("See data as...");
 						ui.selectable_value(interp, Instruction, "Instructions");
 						ui.selectable_value(interp, Text, "Text (UTF-8)");
-					
+						
 						ui.separator();
 						
 						ui.label("Jump to...");
 						ui.horizontal_wrapped(|ui| {
-					ui.selectable_value(look, ProgramCounter, "PC");
-					ui.selectable_value(look, Position(0x00_0000), ".text");
-					ui.selectable_value(look, Position(0x00_2000), ".data");
-					ui.selectable_value(look, Position(0x01_0000), "MMIO");
+							ui.selectable_value(look, ProgramCounter, "PC");
+							ui.selectable_value(look, Position(0x00_0000), ".text");
+							ui.selectable_value(look, Position(0x00_2000), ".data");
+							ui.selectable_value(look, Position(0x01_0000), "MMIO");
 							ui.selectable_value(look, LastException, "Exception");
 						});
 					});
 					
-						if ui.small_button("←").clicked() {
+					if ui.small_button("←").clicked() {
 						*look = Position(looked.saturating_sub(0x10));
-						}
-						if ui.small_button("→").clicked() {
+					}
+					if ui.small_button("→").clicked() {
 						*look = Position(looked.saturating_add(0x10));
 					}
 				});
@@ -391,7 +394,7 @@ impl EmuGui {
 								}
 							},
 							Text => {
-								let text = &mem.0[addr as usize..][..4];
+								let text = &mem.get_word(addr).unwrap().to_le_bytes();
 								let text = String::from_utf8_lossy(text)
 									.into_owned();
 								
@@ -421,30 +424,30 @@ impl EmuGui {
 		egui::Window::new("Virtual Display").show(ctx, |ui| {
 			// TODO: move into menu bar? (restore functionality of Size?)
 			ui.collapsing("Settings", |ui| {
-			ui.horizontal(|ui| {
-				ui.label("Cells:");
-				ui.add(
-					egui::DragValue::new(&mut screen.cells.0)
-						.clamp_range(2..=128)
-						.speed(0.125)
-				);
-				ui.label("×");
-				ui.add(
-					egui::DragValue::new(&mut screen.cells.1)
-						.clamp_range(2..=128)
-						.speed(0.125)
-				);
-				
-				ui.separator();
-				
-				ui.label("Size:");
-				ui.add(
-					egui::DragValue::new(&mut screen.size.x)
-						.max_decimals(0)
-						.clamp_range(4..=64)
-						.speed(0.125)
-						.suffix("px")
-				);
+				ui.horizontal(|ui| {
+					ui.label("Cells:");
+					ui.add(
+						egui::DragValue::new(&mut screen.cells.0)
+							.clamp_range(2..=128)
+							.speed(0.125)
+					);
+					ui.label("×");
+					ui.add(
+						egui::DragValue::new(&mut screen.cells.1)
+							.clamp_range(2..=128)
+							.speed(0.125)
+					);
+					
+					ui.separator();
+					
+					ui.label("Size:");
+					ui.add(
+						egui::DragValue::new(&mut screen.size.x)
+							.max_decimals(0)
+							.clamp_range(4..=64)
+							.speed(0.125)
+							.suffix("px")
+					);
 					// screen.size.y = screen.size.x;
 					ui.label("×");
 					ui.add(
@@ -454,30 +457,30 @@ impl EmuGui {
 							.speed(0.125)
 							.suffix("px")
 					);
-			});
-			
-			ui.separator();
-			
-			ui.horizontal(|ui| {
-				let vl = &mut screen.look;
+				});
 				
-				ui.selectable_value(vl, MemoryPosition::ProgramCounter, "PC");
-				ui.selectable_value(vl, MemoryPosition::Position(0x00_0000), ".text");
-				ui.selectable_value(vl, MemoryPosition::Position(0x00_2000), ".data");
-				ui.selectable_value(vl, MemoryPosition::Position(0x01_0000), "MMIO");
+				ui.separator();
 				
-				if let MemoryPosition::Position(look) = &mut screen.look {
-					if ui.add_enabled(
-						*look > 0x00_0000, egui::Button::new("←").small()
-					).clicked() {
-						*look = look.saturating_sub((screen.cells.0 as u32) << 2);
+				ui.horizontal(|ui| {
+					let vl = &mut screen.look;
+					
+					ui.selectable_value(vl, MemoryPosition::ProgramCounter, "PC");
+					ui.selectable_value(vl, MemoryPosition::Position(0x00_0000), ".text");
+					ui.selectable_value(vl, MemoryPosition::Position(0x00_2000), ".data");
+					ui.selectable_value(vl, MemoryPosition::Position(0x01_0000), "MMIO");
+					
+					if let MemoryPosition::Position(look) = &mut screen.look {
+						if ui.add_enabled(
+							*look > 0x00_0000, egui::Button::new("←").small()
+						).clicked() {
+							*look = look.saturating_sub((screen.cells.0 as u32) << 2);
+						}
+						if ui.add_enabled(
+							*look < 0x01_0000, egui::Button::new("→").small()
+						).clicked() {
+							*look = look.saturating_add((screen.cells.0 as u32) << 2).min(0x01_0000);
+						}
 					}
-					if ui.add_enabled(
-						*look < 0x01_0000, egui::Button::new("→").small()
-					).clicked() {
-						*look = look.saturating_add((screen.cells.0 as u32) << 2).min(0x01_0000);
-					}
-				}
 				});
 			});
 			
@@ -494,8 +497,9 @@ impl EmuGui {
 				_ => panic!("wtf it's not very useful to attach the screen to the err"),
 			} as usize;
 			let mem_take = screen.cells.0 * screen.cells.1 * 4;
+			let (page, offset) = Memory::addr_to_indices(look as u32);
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, &mem.0[look..][..mem_take], screen.cells, screen.size);
+				mmio_display(ui, &mem.0[page].as_ref().unwrap()[offset..][..mem_take], screen.cells, screen.size);
 			});
 		});
 	}
