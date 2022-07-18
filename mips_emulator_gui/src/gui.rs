@@ -24,7 +24,27 @@ struct Core {
 	mem_win: MemoryWindowState,
 	reg_state: RegisterMonitorState,
 }
+impl Default for Core {
+	fn default() -> Self {
+		Core {
+			inner: Cpu::default(),
+			play: false,
 
+			#[cfg(target_arch = "wasm32")]
+			timer: CpuTimer::frames(16.0),
+			#[cfg(not(target_arch = "wasm32"))]
+			timer: CpuTimer::micro(100_000),
+					
+			mem_win: MemoryWindowState {
+				look: MemoryPosition::ProgramCounter,
+				interp: MemoryInterpretation::Instruction,
+			},
+			reg_state: RegisterMonitorState::Cpu,
+		}
+	}
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RegisterMonitorState {
 	Cpu, Cp0,
 }
@@ -43,6 +63,7 @@ struct VirtScreen {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MemoryPosition {
 	ProgramCounter,
+	LastException,
 	Position(u32),
 }
 
@@ -68,18 +89,7 @@ impl Default for EmuGui {
 						reset_cpu(&mut cpu);
 						cpu
 					},
-					play: false,
-					
-					#[cfg(target_arch = "wasm32")]
-					timer: CpuTimer::frames(16.0),
-					#[cfg(not(target_arch = "wasm32"))]
-					timer: CpuTimer::micro(100_000),
-					
-					mem_win: MemoryWindowState {
-						look: MemoryPosition::ProgramCounter,
-						interp: MemoryInterpretation::Instruction,
-					},
-					reg_state: RegisterMonitorState::Cpu,
+					..Default::default()
 				},
 				Core {
 					inner: {
@@ -87,18 +97,13 @@ impl Default for EmuGui {
 						reset_cpu(&mut cpu);
 						cpu
 					},
-					play: false,
 					
 					#[cfg(target_arch = "wasm32")]
 					timer: CpuTimer::frames(18.0),
 					#[cfg(not(target_arch = "wasm32"))]
 					timer: CpuTimer::micro(110_000),
 					
-					mem_win: MemoryWindowState {
-						look: MemoryPosition::ProgramCounter,
-						interp: MemoryInterpretation::Instruction,
-					},
-					reg_state: RegisterMonitorState::Cp0,
+					..Default::default()
 				},
 			],
 			mem,
@@ -113,7 +118,6 @@ impl Default for EmuGui {
 
 fn reset_cpu(cpu: &mut Cpu) {
 	cpu.cp0.halt = false;
-	cpu.cp0[Cp0Register::EPC] = 0xFFFF;
 	
 	cpu[Register::gp] = 0x1800;
 	cpu[Register::sp] = 0x3FFC;
@@ -237,15 +241,23 @@ impl eframe::App for EmuGui {
 }
 
 impl EmuGui {
-	fn show_register_monitor(&self, ctx: &egui::Context) {
+	fn show_register_monitor(&mut self, ctx: &egui::Context) {
 		let Self { cpus: cores, .. } = self;
 		
-		for (i, core) in cores.iter().enumerate() {
+		for (i, core) in cores.iter_mut().enumerate() {
 			egui::Window::new(format!("Register Monitor (Core {})", i + 1))
 				.resizable(false)
 				.show(ctx,
 			|ui| {
 				use RegisterMonitorState::*;
+				
+				ui.horizontal_wrapped(|ui| {
+					ui.selectable_value(&mut core.reg_state, Cpu, "CPU");
+					ui.selectable_value(&mut core.reg_state, Cp0, "Coproc. 0");
+				});
+				
+				ui.separator();
+				
 				match core.reg_state {
 					Cpu =>
 					egui::Grid::new("RegistersCpu")
@@ -303,31 +315,33 @@ impl EmuGui {
 				
 				let looked = match look {
 					ProgramCounter => (core.inner.pc >> 2).saturating_sub(3) << 2,
+					LastException => (core.inner.cp0[Cp0Register::EPC] >> 2).saturating_sub(3) << 2,
 					Position(p) => *p,
 				};
 				
 				ui.horizontal(|ui| {
-					
-					egui::ComboBox::from_id_source("Memory Interpretation")
-						.selected_text(format!("{:?}", interp))
-						.show_ui(ui,
-					|ui| {
-						ui.selectable_value(interp, Instruction, "Instruction");
+					ui.menu_button("View", |ui| {
+						ui.label("See data as...");
+						ui.selectable_value(interp, Instruction, "Instructions");
 						ui.selectable_value(interp, Text, "Text (UTF-8)");
-					});
 					
+						ui.separator();
+						
+						ui.label("Jump to...");
+						ui.horizontal_wrapped(|ui| {
 					ui.selectable_value(look, ProgramCounter, "PC");
 					ui.selectable_value(look, Position(0x00_0000), ".text");
 					ui.selectable_value(look, Position(0x00_2000), ".data");
 					ui.selectable_value(look, Position(0x01_0000), "MMIO");
+							ui.selectable_value(look, LastException, "Exception");
+						});
+					});
 					
-					if let Position(pos) = look {
 						if ui.small_button("←").clicked() {
-							*pos = pos.saturating_sub(0x10);
+						*look = Position(looked.saturating_sub(0x10));
 						}
 						if ui.small_button("→").clicked() {
-							*pos = pos.saturating_add(0x10);
-						}
+						*look = Position(looked.saturating_add(0x10));
 					}
 				});
 				
@@ -405,6 +419,8 @@ impl EmuGui {
 		} = self;
 		
 		egui::Window::new("Virtual Display").show(ctx, |ui| {
+			// TODO: move into menu bar? (restore functionality of Size?)
+			ui.collapsing("Settings", |ui| {
 			ui.horizontal(|ui| {
 				ui.label("Cells:");
 				ui.add(
@@ -429,15 +445,15 @@ impl EmuGui {
 						.speed(0.125)
 						.suffix("px")
 				);
-				screen.size.y = screen.size.x;
-				// ui.label("×");
-				// ui.add(
-				// 	egui::DragValue::new(&mut screen.size.y)
-				// 		.max_decimals(0)
-				// 		.clamp_range(4..=64)
-				// 		.speed(0.125)
-				// 		.suffix("px")
-				// );
+					// screen.size.y = screen.size.x;
+					ui.label("×");
+					ui.add(
+						egui::DragValue::new(&mut screen.size.y)
+							.max_decimals(0)
+							.clamp_range(4..=64)
+							.speed(0.125)
+							.suffix("px")
+					);
 			});
 			
 			ui.separator();
@@ -462,6 +478,7 @@ impl EmuGui {
 						*look = look.saturating_add((screen.cells.0 as u32) << 2).min(0x01_0000);
 					}
 				}
+				});
 			});
 			
 			ui.separator();
@@ -474,6 +491,7 @@ impl EmuGui {
 						.map(|core| core.inner.pc)
 						.unwrap_or_default()
 				},
+				_ => panic!("wtf it's not very useful to attach the screen to the err"),
 			} as usize;
 			let mem_take = screen.cells.0 * screen.cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {

@@ -7,8 +7,10 @@ pub fn set_default_fonts(ctx: &egui::Context) {
 	let mut font_defs = FontDefinitions::default();
 	
 	let fonts = [
+		// keep file size down in WASM builds by not including an emoji font
 		#[cfg(not(target_arch = "wasm"))]
 		("emoji",   include_bytes!("../fonts/emoji.ttf").to_vec()),
+		// but these other two can stay.
 		("sf_pro",  include_bytes!("../fonts/sf-pro.otf").to_vec()),
 		("iosevka", include_bytes!("../fonts/iosevka-term.ttf").to_vec()),
 	];

@@ -368,8 +368,6 @@ impl Cpu {
 		//                       // bc i do want have cfg'able memory layout
 		//                      // maybe just.. suck it up and impl mem paging.
 	}
-	
-	fn overflow(&mut self) { self.exception(ExceptionCause::Ov) }
 }
 
 #[cfg(test)]

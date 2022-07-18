@@ -10,6 +10,7 @@ mod timer;
 fn main() {
 	let name = "Toy MIPS I Emulator";
 	let options = eframe::NativeOptions {
+		initial_window_size: Some(eframe::emath::vec2(1280.0, 720.0)),
 		drag_and_drop_support: true,
 		..Default::default()
 	};
