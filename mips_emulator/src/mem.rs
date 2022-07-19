@@ -1,12 +1,12 @@
 use super::{word, WORD_BYTES};
 
-const MEMORY_SIZE: usize = 0x10_0000;
-const PAGE_SIZE: usize = 0x0_8000;
-const PAGE_NUM: usize = MEMORY_SIZE / PAGE_SIZE;
+pub const MEMORY_SIZE: usize = 0x02_0000; // 128 KiB
+pub const PAGE_SIZE: usize = 0x0_1000; // 4 KiB
+pub const PAGE_NUM: usize = MEMORY_SIZE / PAGE_SIZE;
 
 const OFFSET_MASK: usize = PAGE_SIZE - 1;
 
-const PAGE_SHIFT: usize = 15; // TODO: i don't know math.
+const PAGE_SHIFT: usize = PAGE_SIZE.trailing_zeros() as usize;
 
 #[derive(Default)]
 pub struct Memory(pub [Option<Box<[u8; PAGE_SIZE]>>; PAGE_NUM]);
@@ -59,11 +59,30 @@ impl Memory {
 	// no get_byte_mut because i'm scared of endianness
 	
 	pub fn set_word(&mut self, addr: word, val: word) -> Option<()> {
-		self.write_slice(addr, &val.to_le_bytes())
+		self.set_slice(addr, &val.to_le_bytes())
+	}
+	
+	// TODO: what if this was an iterator instead?
+	// (supports moving across pages, zero pages)
+	pub fn get_slice(&self, addr: word, len: usize) -> Option<&[u8]> {
+		let end_addr = addr + (len - 1) as word;
+		
+		let (s_page, s_offset) = Memory::addr_to_indices(addr);
+		let (e_page, e_offset) = Memory::addr_to_indices(end_addr);
+		
+		if s_page != e_page { return None; }
+		
+		let page = self.0.get(s_page)?.as_ref();
+		
+		if let Some(page) = page {
+			page.get(s_offset..=e_offset)
+		} else {
+			None
+		}
 	}
 	
 	// TODO: allow writes across pages..
-	pub fn write_slice(&mut self, addr: word, data: &[u8]) -> Option<()> {
+	pub fn set_slice(&mut self, addr: word, data: &[u8]) -> Option<()> {
 		let (page, offset) = Memory::addr_to_indices(addr);
 		
 		let end_addr = addr + (data.len() - 1) as word;
@@ -98,7 +117,8 @@ mod tests {
 		let mut m = Memory::default();
 		*m.get_byte_mut(0).expect("page should be constructed") = 5;
 		
-		m.write_slice(1, &[1, 2, 3, 4]).expect("page good");
+		m.set_slice(1, &[1, 2, 3, 4]).expect("page good");
+		assert_eq!(m.get_slice(1, 4).expect("slice have"), &[1, 2, 3, 4]);
 		assert_eq!(m.get_byte(4).unwrap(), 4);
 	}
 }

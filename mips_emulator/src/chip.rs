@@ -53,6 +53,42 @@ impl From<usize> for Register {
 		}
 	}
 }
+impl TryFrom<&str> for Register {
+	type Error = &'static str;
+	
+	fn try_from(s: &str) -> Result<Self, Self::Error> {
+		use Register::*;
+		match s {
+			"zero" => Ok(zero),
+			
+			"at" => Ok(at),
+			
+			"v0" => Ok(v0), "v1" => Ok(v1),
+			
+			"a0" => Ok(a0), "a1" => Ok(a1), "a2" => Ok(a2), "a3" => Ok(a3),
+			
+			"t0" => Ok(t0), "t1" => Ok(t1), "t2" => Ok(t2), "t3" => Ok(t3),
+			"t4" => Ok(t4), "t5" => Ok(t5), "t6" => Ok(t6), "t7" => Ok(t7),
+			
+			"s0" => Ok(s0), "s1" => Ok(s1), "s2" => Ok(s2), "s3" => Ok(s3),
+			"s4" => Ok(s4), "s5" => Ok(s5), "s6" => Ok(s6), "s7" => Ok(s7),
+			
+			"t8" => Ok(t8), "t9" => Ok(t9),
+			
+			"k0" => Ok(k0), "k1" => Ok(k1),
+			
+			"gp" => Ok(gp),
+			
+			"sp" => Ok(sp),
+			
+			"fp" => Ok(fp),
+			
+			"ra" => Ok(ra),
+			
+			_ => Err("unknown register"),
+		}
+	}
+}
 
 #[repr(usize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,22 +196,28 @@ impl core::ops::IndexMut<Cp0Register> for Cp0 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InsFormat {
 	/// "Result" format
-	/// -- Saves the result of an operation on two registers
+	/// 
+	/// Saves the result of an operation on two registers
 	/// into the `rd` register.
+	/// 
+	/// May include a `shamt` immediate value, indicated by the boolean.
 	R,
 	
 	/// "Immediate" format
-	/// -- Saves the result of an operation between a register
+	/// 
+	/// Saves the result of an operation between a register
 	/// and an immediate value into the `rt`/`rs` register.
 	/// (`rs` only if using store operations.)
 	I,
 	
 	/// "Jump" format
-	/// -- Jumps to the specified address.
+	/// 
+	/// Jumps to the specified address.
 	J,
 	
 	/// "`syscall`" format
-	/// -- `syscall`.
+	/// 
+	/// It's `syscall`.
 	Sys,
 }
 
@@ -196,6 +238,8 @@ impl Cpu {
 	/// Register size as in "number of bits a register takes up in the
 	/// bytecode representation".
 	const REGISTER_SIZE: usize = 5;
+	
+	pub const INSTRUCTION_BYTES: usize = word::BITS as usize / 8;
 	
 	/// Table of operations
 	const INSTRUCTIONS: &'static [(Opcode, &'static str, InsFormat)] = {
@@ -321,9 +365,9 @@ impl Cpu {
 			_    => Opcode::General(opcode),
 		};
 		
-		Self::INSTRUCTIONS
-			.iter().cloned()
+		Self::INSTRUCTIONS.iter()
 			.find(|(other, _, _)| opcode_ty == *other)
+			.cloned()
 			.map(|(_, ident, fmt)| (ident, fmt))
 	}
 	

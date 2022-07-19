@@ -13,6 +13,7 @@ pub struct EmuGui {
 	cpus: Vec<Core>,
 	mem: Memory,
 	screen: VirtScreen,
+	mem_win: MemoryWindowState,
 }
 
 struct Core {
@@ -21,7 +22,6 @@ struct Core {
 	play: bool,
 	timer: CpuTimer,
 	
-	mem_win: MemoryWindowState,
 	reg_state: RegisterMonitorState,
 }
 impl Default for Core {
@@ -35,23 +35,18 @@ impl Default for Core {
 			#[cfg(not(target_arch = "wasm32"))]
 			timer: CpuTimer::micro(100_000),
 					
-			mem_win: MemoryWindowState {
-				look: MemoryPosition::ProgramCounter,
-				interp: MemoryInterpretation::Instruction,
-			},
 			reg_state: RegisterMonitorState::Cpu,
 		}
 	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RegisterMonitorState {
-	Cpu, Cp0,
-}
+enum RegisterMonitorState { Cpu, Cp0, }
 
 struct MemoryWindowState {
 	look: MemoryPosition,
 	interp: MemoryInterpretation,
+	core: usize,
 }
 
 struct VirtScreen {
@@ -112,6 +107,11 @@ impl Default for EmuGui {
 				cells: (16, 16),
 				size: egui::vec2(16.0, 16.0),
 			},
+			mem_win: MemoryWindowState {
+				look: MemoryPosition::ProgramCounter,
+				interp: MemoryInterpretation::Instruction,
+				core: 0,
+			},
 		}
 	}
 }
@@ -126,8 +126,8 @@ fn reset_cpu(cpu: &mut Cpu) {
 
 fn reset_mem(mem: &mut Memory) {
 	mem.clear();
-	mem.write_slice(0x00_0000, PRG_TEXT);
-	mem.write_slice(0x00_2000, PRG_DATA);
+	mem.set_slice(0x00_0000, PRG_TEXT);
+	mem.set_slice(0x00_2000, PRG_DATA);
 	
 	// HACK: init MMIO page because I'm lazy.
 	// I later access it directly, which is a sin.
@@ -137,9 +137,6 @@ fn reset_mem(mem: &mut Memory) {
 impl eframe::App for EmuGui {
 	fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 		let Self { cpus: cores, mem, .. } = self;
-		
-		// TODO: figure out what the hell will happen
-		// if someone wants to inspect a byte at a time instead of a word at a time...
 		
 		for core in cores.iter_mut() {
 			if core.inner.cp0.halt { core.play = false; }
@@ -154,22 +151,22 @@ impl eframe::App for EmuGui {
 		}
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
-			if frame.is_web() {
 				ui.horizontal(|ui| {
+				if frame.is_web() {
 					ui.heading("Toy MIPS I Emulator");
 					ui.separator();
-					ui.hyperlink_to("GitHub Repository", "https://github.com/TheV360/toy_mips_emu");
-				});
+					ui.hyperlink_to("GitHub", "https://github.com/TheV360/toy_mips_emu");
 				ui.separator();
 			}
 			
-			ui.horizontal(|ui| {
 				let theme_str = if self.dark_theme { "Lite" } else { "Dark" };
 				if ui.small_button(theme_str).clicked() {
 					self.dark_theme = !self.dark_theme;
 					util::set_ui_theme(ctx, self.dark_theme);
 				}
+				
 				ui.separator();
+				
 				if ui.button("Open...").clicked() {
 					
 				}
@@ -234,9 +231,6 @@ impl eframe::App for EmuGui {
 		
 		egui::CentralPanel::default().show(ctx, |_|());
 		
-		// egui::Window::new("Settings blah blah")
-		// 	.show(ctx, |ui| { ctx.settings_ui(ui); });
-		
 		self.show_memory_monitor(ctx);
 		self.show_register_monitor(ctx);
 		self.show_mmio_display(ctx);
@@ -295,27 +289,28 @@ impl EmuGui {
 							}
 						})
 				}
-				// TODO: let user switch between these lol
 			});
 		}
 	}
 	
 	fn show_memory_monitor(&mut self, ctx: &egui::Context) {
-		let Self { cpus: cores, mem, .. } = self;
+		let Self { cpus: cores, mem, mem_win, .. } = self;
 		
-		for (i, core) in cores.iter_mut().enumerate() {
 			use MemoryPosition::*;
 			use MemoryInterpretation::*;
-			// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/scrolling.rs
-			// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/apps/demo/mod.rs
+		// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/scrolling.rs
+		// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/mod.rs
 			
-			let title = format!("Memory Monitor (Core {})", i + 1);
-			egui::Window::new(title).show(ctx, |ui| {
+		egui::Window::new("Memory Monitor").show(ctx, |ui| {
 				let MemoryWindowState {
 					look,
-					interp
-				} = &mut core.mem_win;
+				interp,
+				core: core_i,
+			} = mem_win;
+			
+			let core = &cores[*core_i];
 				
+			// TODO: aoaoauauagh. actually scroll to whatever's in here.
 				let looked = match look {
 					ProgramCounter => (core.inner.pc >> 2).saturating_sub(3) << 2,
 					LastException => (core.inner.cp0[Cp0Register::EPC] >> 2).saturating_sub(3) << 2,
@@ -337,26 +332,34 @@ impl EmuGui {
 							ui.selectable_value(look, Position(0x00_2000), ".data");
 							ui.selectable_value(look, Position(0x01_0000), "MMIO");
 							ui.selectable_value(look, LastException, "Exception");
-						});
 					});
 					
-					if ui.small_button("←").clicked() {
-						*look = Position(looked.saturating_sub(0x10));
-					}
-					if ui.small_button("→").clicked() {
-						*look = Position(looked.saturating_add(0x10));
+					ui.separator();
+					
+					ui.label("In terms of...");
+					for i in 0..cores.len() {
+						ui.selectable_value(core_i, i, format!("Core {}", i + 1));
 					}
 				});
+			});
 				
 				ui.separator();
 				
-				egui::Grid::new("Memory")
-					.striped(true)
-					.min_col_width(32.0)
-					.show(ui,
-				|ui| {
-					for i in 0..16u32 {
-						let addr = looked.saturating_add(i << 2);
+			let row_height = ui.text_style_height(&egui::TextStyle::Body);
+			
+			const TEXT_WIDTH: usize = 16;
+			let row_eat = match interp {
+				Instruction => Cpu::INSTRUCTION_BYTES,
+				Text => TEXT_WIDTH, // TODO: it only displays the first 4 bytes of the text..
+			};
+			
+			let row_num = mips_emulator::mem::MEMORY_SIZE / row_eat;
+			egui::ScrollArea::vertical().always_show_scroll(true).show_rows(
+				ui, row_height, row_num,
+				|ui, row_range| {
+					egui::Grid::new("Memory").striped(true).show(ui, |ui| {
+						for row in row_range {
+							let addr = (row as u32) << row_eat.trailing_zeros();
 						
 						let pc = core.inner.pc;
 						let epc = core.inner.cp0[Cp0Register::EPC];
@@ -368,13 +371,7 @@ impl EmuGui {
 						};
 						
 						if let Some((label, color, bg_color)) = line_highlight {
-							ui.add(
-							egui::Label::new(
-								egui::RichText::new(label)
-								.color(color)
-								.background_color(bg_color)
-								)
-							);
+								ui.label(egui::RichText::new(label).color(color).background_color(bg_color));
 						} else {
 							ui.label("");
 						}
@@ -383,7 +380,7 @@ impl EmuGui {
 						let word = mem.get_word(addr).unwrap();
 						ui.monospace(format!("{word:#010X}"));
 						
-						match core.mem_win.interp {
+							match interp {
 							Instruction => {
 								let ins = mem.get_word(addr).unwrap();
 								
@@ -394,7 +391,7 @@ impl EmuGui {
 								}
 							},
 							Text => {
-								let text = &mem.get_word(addr).unwrap().to_le_bytes();
+									let text = mem.get_slice(addr, TEXT_WIDTH).unwrap_or(&[0u8; TEXT_WIDTH]);
 								let text = String::from_utf8_lossy(text)
 									.into_owned();
 								
@@ -409,8 +406,9 @@ impl EmuGui {
 						ui.end_row();
 					}
 				});
+				}
+			);
 			});
-		}
 	}
 	
 	fn show_mmio_display(&mut self, ctx: &egui::Context) {
@@ -497,9 +495,8 @@ impl EmuGui {
 				_ => panic!("wtf it's not very useful to attach the screen to the err"),
 			} as usize;
 			let mem_take = screen.cells.0 * screen.cells.1 * 4;
-			let (page, offset) = Memory::addr_to_indices(look as u32);
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, &mem.0[page].as_ref().unwrap()[offset..][..mem_take], screen.cells, screen.size);
+				mmio_display(ui, mem.get_slice(look as u32, mem_take).unwrap(), screen.cells, screen.size);
 			});
 		});
 	}
