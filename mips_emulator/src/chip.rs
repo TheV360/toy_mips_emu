@@ -224,14 +224,34 @@ pub enum InsFormat {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Opcode {
 	/// Typical opcode
-	General(word), // -> 0x??
+	General(u8), // -> 0x??
 	
 	/// Opcode `0x00` contains several different functions.
-	Function(word), // -> 0x00 0x??
+	Function(u8), // -> 0x00 0x??
 	
-	/// Not sure if this is gonna cover all coprocessor stuff. We'll see.
-	/// It's under opcode `0x10`.
-	Coprocessor(word), // -> 0x10 0x??
+	// /// Not sure if this is gonna cover all coprocessor stuff. We'll see.
+	// /// It's under opcode `0x10`.
+	// Coprocessor(u8), // -> 0x10 0x??
+	
+	// notes:
+	// coprocessor instructions have an "MF" part which determine if the ins.
+	// is moving from (0x0) or moving to (0x4). so maybe a boolean flag for it.
+	//
+	// what is coprocessor? is it an opcode? or a format?
+	// it's acting more like a format tbh..
+	//
+	// ok i forgot my previous thing. it *is* an opcode.
+	// the thing is that coprocessors can define their own format.
+	//
+	// what the heck is sel?
+}
+impl Opcode {
+	fn from_bits(b: word) -> Self {
+		unimplemented!()
+	}
+	fn to_bits(self) -> word {
+		unimplemented!()
+	}
 }
 
 impl Cpu {
@@ -271,7 +291,8 @@ impl Cpu {
 		(General(0x0d), "ori"  , I),
 		(General(0x0e), "xori" , I),
 		(General(0x0f), "lui"  , I),
-		(Coprocessor(0x00), "mfc0", R),
+		// (Coprocessor(0x00), "mfc0", R),
+		(Function(0x00), "mfc0", R),
 		(General(0x23), "lw"   , I),
 		(General(0x24), "lbu"  , I),
 		(General(0x25), "lhu"  , I),
@@ -360,9 +381,9 @@ impl Cpu {
 	pub fn get_instruction_info(ins: word) -> Option<(&'static str, InsFormat)> {
 		let opcode = bits_span(ins, 26, 6);
 		let opcode_ty = match opcode {
-			0x00 => Opcode::Function(bits_span(ins, 0, 6)),
-			0x10 => Opcode::Coprocessor(bits_span(ins, 21, 5)),
-			_    => Opcode::General(opcode),
+			0x00 => Opcode::Function(bits_span(ins, 0, 6) as u8),
+			// 0x10 => Opcode::Coprocessor(bits_span(ins, 21, 5) as u8),
+			_    => Opcode::General(opcode as u8),
 		};
 		
 		Self::INSTRUCTIONS.iter()
@@ -386,16 +407,108 @@ impl Cpu {
 				},
 				I => {
 					let imm = bits_span(ins, 0, 16);
-					Some(format!("{ins_name} ${rt:?}, ${rs:?}, 0x{imm:X}"))
+					Some(format!("{ins_name} ${rt:?}, ${rs:?}, {imm:#X}"))
 				},
 				J => {
 					let j_addr = bits_span(ins, 0, 26) << 2;
-					Some(format!("{ins_name} 0x{j_addr:08X}"))
+					Some(format!("{ins_name} {j_addr:#010X}"))
 				},
-				Sys => Some("syscall".to_owned()),
+				Sys => {
+					let code = bits_span(ins, 6, 20);
+					Some(format!("syscall {code:#X}"))
+				},
 			}
 		} else {
 			None
+		}
+	}
+	
+	pub fn from_assembly(s: &str) -> Result<word, &'static str> {
+		let mut parts = s.split_ascii_whitespace()
+			.map(|s| s.trim())
+			.filter(|&s| !s.is_empty());
+		
+		let mnemonic = parts.next().ok_or("missing mnemonic")?;
+		let def = Self::INSTRUCTIONS.iter()
+			.find(|(_, m, _)| mnemonic == *m)
+			.cloned().ok_or("unknown mnemonic")?;
+		
+		fn register(s: &str) -> Result<Register, &'static str> {
+			s.strip_prefix('$')
+				.ok_or("register name missing $ prefix") // TODO: good idea to have number version of it too?
+				.and_then(Register::try_from)
+		}
+		
+		fn literal(s: &str) -> Result<word, &'static str> {
+			let (s, radix) = Option::or(
+				s.strip_prefix("0x").map(|s| (s, 16)),
+			Option::or(
+				s.strip_prefix("0o").map(|s| (s, 8)),
+				s.strip_prefix("0b").map(|s| (s, 2))
+			)).unwrap_or((s, 10));
+			
+			// TODO: actual error please
+			word::from_str_radix(s, radix).map_err(|_| "invalid literal")
+		}
+		
+		use InsFormat::*;
+		match def {
+			(c, _, R) => {
+				let rd = parts.next()
+					.ok_or("missing rd register")
+					.and_then(register)?;
+				
+				let rs = parts.next()
+					.ok_or("missing rs register")
+					.and_then(register)?;
+				
+				let rt = parts.next()
+					.ok_or("missing rt register")
+					.and_then(register)?;
+				
+				// TODO: loll what do i do with shift amt
+				
+				use Opcode::*;
+				match c {
+					General(o) => Ok(op(o, op_r(0, rd, rs, rt, 0))),
+					Function(f) => Ok(op_r(f, rd, rs, rt, 0)),
+					// _ => unimplemented!(),
+				}
+			},
+			(c, _, I) => {
+				let rt = parts.next()
+					.ok_or("missing rt register")
+					.and_then(register)?;
+				
+				let rs = parts.next()
+					.ok_or("missing rs register")
+					.and_then(register)?;
+				
+				let imm = parts.next()
+					.ok_or("missing immediate value")
+					.and_then(literal)?;
+				
+				use Opcode::*;
+				match c {
+					General(o) => Ok(op(o, op_i(rs, rt, imm as i16))),
+					_ => unimplemented!(),
+				}
+			},
+			(c, _, J) => {
+				let j_addr = parts.next()
+					.ok_or("missing address")
+					.and_then(literal)?;
+				
+				use Opcode::*;
+				match c {
+					General(o) => Ok(op(o, op_j(j_addr))),
+					_ => unimplemented!(),
+				}
+			},
+			(_, _, Sys) => {
+				let code = if let Some(s) = parts.next() { literal(s)? } else { 0 };
+				Ok(op_syscall(code))
+			},
 		}
 	}
 	
@@ -414,10 +527,6 @@ impl Cpu {
 	}
 }
 
-#[cfg(test)]
-mod tests {
-	use super::*;
-	
 	fn op(o: u8, x: word) -> word { ((o as word) << 26) | x }
 	
 	fn op_r(f: u8, rd: Register, rs: Register, rt: Register, shamt: u8) -> word {
@@ -427,6 +536,14 @@ mod tests {
 	fn op_i(rs: Register, rt: Register, imm: i16) -> word {
 		((rs as word) << 21) | ((rt as word) << 16) | ((imm as word) & 0xFFFF)
 	}
+
+fn op_j(addr: word) -> word { addr >> 2 }
+
+fn op_syscall(code: word) -> word { code << 6 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
 	
 	#[test]
 	fn basic_computation() {

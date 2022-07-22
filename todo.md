@@ -9,10 +9,12 @@ TODO:
 - currently i made the text representation wayy too wide, and it currently only shows the first 4 bytes of a string. that should be fixed.
 	- i can vary how many labels per row there are across representation views, that's fine to do. i just can't vary # of labels per row across individual rows.
 - branch delay slot doent' exist.
+	- easy to implement, actually. just a bit awkward, mainly because it.. y'know. causes execution to linger before jumping.
 - exceptions are incomplete
 - work on memory paging `get_slice` - it probably needs to just become an iterator or something..
 - allow writes across pages with `set_slice`
 - complete `MemoryPlaces` and support loading some kind of executable file that includes `.data` and `.text` and everything nice.
+	- required to be inside CPU crate, as CPU needs that information of where to jump to..
 - ~~export `INSTRUCTION_SIZE` that's just `WORD_BYTES` reexported lol~~
 - "scroll to" support in new "infinite list" memory view
 	- a "jump to exact address" thing too.
@@ -56,3 +58,4 @@ TODO:
 	i've really been neglecting that `syscall` at the beginning of my sample program for waaay too long. i'd like to have a terminal view like the bottom panel of MARS.
 	- combined input/output like the typical terminal
 	- mumble something about a version of the emulator that runs in the terminal
+	- https://courses.missouristate.edu/KenVollmar/MARS/Help/SyscallHelp.html
