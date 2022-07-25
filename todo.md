@@ -6,8 +6,9 @@ TODO:
 
 ## Small Stuff
 
-- currently i made the text representation wayy too wide, and it currently only shows the first 4 bytes of a string. that should be fixed.
+- currently i made the text representation wayy too wide, and the hexdump column currently only shows the first 4 bytes of a string. that should be fixed.
 	- i can vary how many labels per row there are across representation views, that's fine to do. i just can't vary # of labels per row across individual rows.
+	- my idea is to just .. humm.. yeah,  i should probably just uh have it be 4 labels for words and 16 labels for text repr. . who cares about performance in the ui? the table is lazy evaluated anyway.
 - branch delay slot doent' exist.
 	- easy to implement, actually. just a bit awkward, mainly because it.. y'know. causes execution to linger before jumping.
 - exceptions are incomplete
@@ -20,8 +21,20 @@ TODO:
 	- a "jump to exact address" thing too.
 - oof, switching representations loses my place in the memory view.
 
+## Meta Stuff
+
+- looking at the older version of the MIPS emulator up at my v360.dev domain, the dark theme text is white instead of gray and it looks 100x better imo. need to recreate that.
+	- also fuck border radius all my homies hate border radius
+- CI/CD pipeline? i think it's free for all public repositories.
+	- keeps https://v360.dev/toy_mips_emu up-to-date
+	- would just imply uh..
+	- see https://github.com/emilk/egui/blob/master/.github/workflows/rust.yml
+	- in turn, see https://github.com/actions-rs/cargo
+
 ## BIG FEATURES
 
+- **breakpoints..**
+	- again will show up "in terms of a specific CPU"
 - **heat map**  
 	(highlights instructions that have been executed and registers/memory as they are modified)
 	- get info about current instruction (registers used, how they're used, etc.)

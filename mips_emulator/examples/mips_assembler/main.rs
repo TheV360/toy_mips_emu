@@ -19,8 +19,9 @@ fn main() -> std::io::Result<()> {
 	
 	for (i, l) in s.lines()
 		.enumerate()
-		.map(|(i, s)| (i, s.trim()))
-		.filter(|&(_, s)| !(s.is_empty() || s.starts_with('#') || s.starts_with('.'))) {
+		.map(|(i, s)| (i, s.trim_start()))
+		.filter(|&(_, s)| !(s.is_empty() || s.starts_with(['#', '.'])))
+		.map(|(i, s)| (i, s.split('#').next().unwrap().trim_end())) {
 		print!("{:4}. ", i + 1);
 		
 		match Cpu::from_assembly(l) {

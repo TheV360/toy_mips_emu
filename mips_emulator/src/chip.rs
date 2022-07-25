@@ -433,26 +433,33 @@ impl Cpu {
 			.find(|(_, m, _)| mnemonic == *m)
 			.cloned().ok_or("unknown mnemonic")?;
 		
+		fn maybe_comma(s: &str) -> &str {
+			s.strip_suffix(',').unwrap_or(s)
+		}
+		
 		fn register(s: &str) -> Result<Register, &'static str> {
-			s.strip_prefix('$')
+			maybe_comma(s)
+				.strip_prefix('$')
 				.ok_or("register name missing $ prefix") // TODO: good idea to have number version of it too?
 				.and_then(Register::try_from)
 		}
 		
 		fn literal(s: &str) -> Result<word, &'static str> {
-			let (s, radix) = Option::or(
-				s.strip_prefix("0x").map(|s| (s, 16)),
-			Option::or(
-				s.strip_prefix("0o").map(|s| (s, 8)),
-				s.strip_prefix("0b").map(|s| (s, 2))
-			)).unwrap_or((s, 10));
+			let s = maybe_comma(s);
+			
+			let (s, radix) = match s.get(..2) {
+				Some("0x") => (&s[2..], 16),
+				Some("0o") => (&s[2..],  8),
+				Some("0b") => (&s[2..],  2),
+				_ => (s, 10)
+			};
 			
 			// TODO: actual error please
 			word::from_str_radix(s, radix).map_err(|_| "invalid literal")
 		}
 		
 		use InsFormat::*;
-		match def {
+		let r = match def {
 			(c, _, R) => {
 				let rd = parts.next()
 					.ok_or("missing rd register")
@@ -467,11 +474,12 @@ impl Cpu {
 					.and_then(register)?;
 				
 				// TODO: loll what do i do with shift amt
+				let shamt = 0;
 				
 				use Opcode::*;
 				match c {
-					General(o) => Ok(op(o, op_r(0, rd, rs, rt, 0))),
-					Function(f) => Ok(op_r(f, rd, rs, rt, 0)),
+					General(o)  => Ok(op(o, op_r(0, rd, rs, rt, shamt))),
+					Function(f) => Ok(      op_r(f, rd, rs, rt, shamt) ),
 					// _ => unimplemented!(),
 				}
 			},
@@ -509,7 +517,10 @@ impl Cpu {
 				let code = if let Some(s) = parts.next() { literal(s)? } else { 0 };
 				Ok(op_syscall(code))
 			},
-		}
+		};
+		
+		// this looks gross lol
+		if parts.count() == 0 { r } else { Err("too many arguments") }
 	}
 	
 	fn exception(&mut self, cause: ExceptionCause, ) {
@@ -577,5 +588,10 @@ mod tests {
 		
 		println!("{:08x}", cpu[t1]);
 		assert_eq!(cpu[t1], 16);
+	}
+	
+	#[test]
+	fn lenient_parsing() {
+		assert_eq!(Cpu::from_assembly("add $t0 $t0 $t0"), Cpu::from_assembly("add $t0, $t0, $t0"));
 	}
 }
