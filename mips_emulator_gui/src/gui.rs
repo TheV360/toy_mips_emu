@@ -23,6 +23,8 @@ struct Core {
 	timer: CpuTimer,
 	
 	reg_state: RegisterMonitorState,
+	
+	breakpoints: Vec<u32>,
 }
 impl Default for Core {
 	fn default() -> Self {
@@ -34,8 +36,10 @@ impl Default for Core {
 			timer: CpuTimer::frames(16.0),
 			#[cfg(not(target_arch = "wasm32"))]
 			timer: CpuTimer::micro(100_000),
-					
+			
 			reg_state: RegisterMonitorState::Cpu,
+			
+			breakpoints: Vec::new(),
 		}
 	}
 }
@@ -151,14 +155,14 @@ impl eframe::App for EmuGui {
 		}
 		
 		egui::TopBottomPanel::top("Title").show(ctx, |ui| {
-				ui.horizontal(|ui| {
+			ui.horizontal(|ui| {
 				if frame.is_web() {
 					ui.heading("Toy MIPS I Emulator");
 					ui.separator();
 					ui.hyperlink_to("GitHub", "https://github.com/TheV360/toy_mips_emu");
-				ui.separator();
-			}
-			
+					ui.separator();
+				}
+				
 				let theme_str = if self.dark_theme { "Lite" } else { "Dark" };
 				if ui.small_button(theme_str).clicked() {
 					self.dark_theme = !self.dark_theme;
@@ -278,13 +282,28 @@ impl EmuGui {
 						.striped(true)
 						.show(ui, |ui| {
 							use Cp0Register::*;
-							for reg_e in [ BadVAddr, Status, Cause, EPC ] {
+							
+							// TODO: wtf is going on with the width of this window
+							
+							let regs = [
+								(BadVAddr, "Short for \"Bad Virtual Address\".\nHolds the address that failed to be fetched, if any."),
+								(Status,   "asddslgjlkajsflkasgj"),
+								(Cause,    "asddslgjlkajsflkasgj 2"),
+								(EPC,      "Short for \"Error Program Counter\".\nHolds the address of the most recent instruction\nthat caused an exception."),
+							];
+							
+							for (reg_e, tooltip) in regs {
 								let reg = reg_e as usize;
 								let reg_val = core.inner.cp0[reg_e];
 								
-								ui.label(format!("{reg_e:?} ({reg:02})"));
-								ui.monospace(format!("{reg_val:#010X}"));
-								ui.monospace(format!("{reg_val:#034b}"));
+								ui.vertical_centered(|ui| {
+									ui.label(format!("{reg_e:?} ({reg:02})")).on_hover_text(tooltip);
+									ui.horizontal(|ui| {
+										ui.monospace(format!("{reg_val:#010X}"));
+										ui.monospace(format!("{reg_val:#034b}"));
+									});
+								});
+								
 								ui.end_row();
 							}
 						})
@@ -296,42 +315,44 @@ impl EmuGui {
 	fn show_memory_monitor(&mut self, ctx: &egui::Context) {
 		let Self { cpus: cores, mem, mem_win, .. } = self;
 		
-			use MemoryPosition::*;
-			use MemoryInterpretation::*;
+		use MemoryPosition::*;
+		use MemoryInterpretation::*;
 		// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/scrolling.rs
 		// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/mod.rs
-			
+		
 		egui::Window::new("Memory Monitor").show(ctx, |ui| {
-				let MemoryWindowState {
-					look,
+			let MemoryWindowState {
+				look,
 				interp,
 				core: core_i,
 			} = mem_win;
 			
-			let core = &cores[*core_i];
-				
 			// TODO: aoaoauauagh. actually scroll to whatever's in here.
-				let looked = match look {
+			let looked = {
+				let core = &cores[*core_i];
+				
+				match look {
 					ProgramCounter => (core.inner.pc >> 2).saturating_sub(3) << 2,
 					LastException => (core.inner.cp0[Cp0Register::EPC] >> 2).saturating_sub(3) << 2,
 					Position(p) => *p,
-				};
-				
-				ui.horizontal(|ui| {
-					ui.menu_button("View", |ui| {
-						ui.label("See data as...");
-						ui.selectable_value(interp, Instruction, "Instructions");
-						ui.selectable_value(interp, Text, "Text (UTF-8)");
-						
-						ui.separator();
-						
-						ui.label("Jump to...");
-						ui.horizontal_wrapped(|ui| {
-							ui.selectable_value(look, ProgramCounter, "PC");
-							ui.selectable_value(look, Position(0x00_0000), ".text");
-							ui.selectable_value(look, Position(0x00_2000), ".data");
-							ui.selectable_value(look, Position(0x01_0000), "MMIO");
-							ui.selectable_value(look, LastException, "Exception");
+				}
+			};
+			
+			ui.horizontal(|ui| {
+				ui.menu_button("View", |ui| {
+					ui.label("See data as...");
+					ui.selectable_value(interp, Instruction, "Instructions");
+					ui.selectable_value(interp, Text, "Text (UTF-8)");
+					
+					ui.separator();
+					
+					ui.label("Jump to...");
+					ui.horizontal_wrapped(|ui| {
+						ui.selectable_value(look, ProgramCounter, "PC");
+						ui.selectable_value(look, Position(0x00_0000), ".text");
+						ui.selectable_value(look, Position(0x00_2000), ".data");
+						ui.selectable_value(look, Position(0x01_0000), "MMIO");
+						ui.selectable_value(look, LastException, "Exception");
 					});
 					
 					ui.separator();
@@ -342,23 +363,34 @@ impl EmuGui {
 					}
 				});
 			});
-				
-				ui.separator();
-				
-			let row_height = ui.text_style_height(&egui::TextStyle::Body);
 			
-			const TEXT_WIDTH: usize = 16;
+			ui.separator();
+			
+			let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
+			
+			const TEXT_WIDTH: usize = 8;
 			let row_eat = match interp {
 				Instruction => Cpu::INSTRUCTION_BYTES,
-				Text => TEXT_WIDTH, // TODO: it only displays the first 4 bytes of the text..
+				Text => TEXT_WIDTH,
 			};
 			
+			let core = &mut cores[*core_i];
+			
 			let row_num = mips_emulator::mem::MEMORY_SIZE / row_eat;
-			egui::ScrollArea::vertical().always_show_scroll(true).show_rows(
+			
+			egui::ScrollArea::vertical().auto_shrink([false; 2]).always_show_scroll(true).show_rows(
 				ui, row_height, row_num,
 				|ui, row_range| {
-					egui::Grid::new("Memory").striped(true).show(ui, |ui| {
+					egui::Grid::new(match interp {
+						Instruction => "MemoryIns",
+						Text => "MemoryText",
+					}).min_col_width(12.0).show(ui, |ui| {
 						for row in row_range {
+							if row % 2 == 0 {
+								let rect = egui::Rect::from_min_size(ui.cursor().min, egui::Vec2::new(f32::INFINITY, row_height));
+								ui.painter().rect_filled(rect, 0.0, ui.style().visuals.faint_bg_color);
+							}
+							
 							let addr = (row as u32) << row_eat.trailing_zeros();
 						
 						let pc = core.inner.pc;
@@ -372,43 +404,69 @@ impl EmuGui {
 						
 						if let Some((label, color, bg_color)) = line_highlight {
 								ui.label(egui::RichText::new(label).color(color).background_color(bg_color));
-						} else {
-							ui.label("");
-						}
-						ui.monospace(format!("{addr:#010X}"));
-						
-						let word = mem.get_word(addr).unwrap();
-						ui.monospace(format!("{word:#010X}"));
-						
-							match interp {
-							Instruction => {
-								let ins = mem.get_word(addr).unwrap();
-								
-								if let Some(disasm) = Cpu::get_disassembly(ins) {
-									ui.monospace(disasm);
-								} else {
-									ui.label("Invalid");
+							} else { ui.label(""); }
+							
+							let brk = core.breakpoints.iter().enumerate().find(|(_, brk)| **brk == addr);
+							
+							if ui.radio(brk.is_some(), "").clicked() {
+								match brk {
+									Some((i, _)) => {
+										core.breakpoints.swap_remove(i);
+									},
+									None => core.breakpoints.push(addr),
 								}
-							},
-							Text => {
-									let text = mem.get_slice(addr, TEXT_WIDTH).unwrap_or(&[0u8; TEXT_WIDTH]);
-								let text = String::from_utf8_lossy(text)
-									.into_owned();
-								
-								let text = text.chars()
-									.map(util::replace_control_char)
-									.collect::<String>();
-								
-								ui.monospace(text);
 							}
+							
+							ui.monospace(format!("{addr:#010X}"));
+							
+							ui.separator();
+							
+							if let Some(bytes) = mem.get_slice(addr, row_eat) {
+								ui.horizontal(|ui| {
+									for b in bytes {
+										ui.monospace(format!("{b:02X}"));
+									}
+									// ui.monospace(bytes.iter().fold(
+									// 	String::with_capacity(bytes.len() * 3),
+									// 	|d, b| d + &format!("{b:02X} ")
+									// ).trim_end());
+								});
+							} else {
+								ui.label("Page Fault :)");
+							}
+							
+							ui.separator();
+							
+							match interp {
+								Instruction => {
+									let word = mem.get_word(addr).unwrap_or(0);
+									
+									if let Some(disasm) = Cpu::get_disassembly(word) {
+										ui.monospace(disasm);
+									} else {
+										ui.label("Invalid");
+									}
+								},
+								Text => {
+									let bytes = mem.get_slice(addr, TEXT_WIDTH).unwrap_or(&[0u8; TEXT_WIDTH]);
+									
+									let text = String::from_utf8_lossy(bytes)
+										.into_owned();
+									
+									let text = text.chars()
+										.map(util::replace_control_char)
+										.collect::<String>();
+									
+									ui.monospace(text);
+								}
+							}
+				
+							ui.end_row();
 						}
-						
-						ui.end_row();
-					}
-				});
+					});
 				}
 			);
-			});
+		});
 	}
 	
 	fn show_mmio_display(&mut self, ctx: &egui::Context) {
@@ -420,8 +478,7 @@ impl EmuGui {
 		} = self;
 		
 		egui::Window::new("Virtual Display").show(ctx, |ui| {
-			// TODO: move into menu bar? (restore functionality of Size?)
-			ui.collapsing("Settings", |ui| {
+			ui.menu_button("View", |ui| {
 				ui.horizontal(|ui| {
 					ui.label("Cells:");
 					ui.add(
