@@ -90,7 +90,7 @@ impl Default for EmuGui {
 					},
 					..Default::default()
 				},
-				Core {
+				/*Core {
 					inner: {
 						let mut cpu = Cpu::default();
 						reset_cpu(&mut cpu);
@@ -103,7 +103,7 @@ impl Default for EmuGui {
 					timer: CpuTimer::micro(110_000),
 					
 					..Default::default()
-				},
+				},*/
 			],
 			mem,
 			screen: VirtScreen {
@@ -378,7 +378,7 @@ impl EmuGui {
 			
 			let row_num = mips_emulator::mem::MEMORY_SIZE / row_eat;
 			
-			egui::ScrollArea::vertical().auto_shrink([false; 2]).always_show_scroll(true).show_rows(
+			egui::ScrollArea::vertical().auto_shrink([false; 2]).show_rows(
 				ui, row_height, row_num,
 				|ui, row_range| {
 					egui::Grid::new(match interp {
@@ -386,8 +386,9 @@ impl EmuGui {
 						Text => "MemoryText",
 					}).min_col_width(12.0).show(ui, |ui| {
 						for row in row_range {
-							if row % 2 == 0 {
+							if row % 2 == 1 {
 								let rect = egui::Rect::from_min_size(ui.cursor().min, egui::Vec2::new(f32::INFINITY, row_height));
+								let rect = rect.expand2(0.5 * ui.spacing().item_spacing);
 								ui.painter().rect_filled(rect, 0.0, ui.style().visuals.faint_bg_color);
 							}
 							
