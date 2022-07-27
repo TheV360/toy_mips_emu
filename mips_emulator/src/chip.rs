@@ -201,7 +201,7 @@ pub enum InsFormat {
 	/// into the `rd` register.
 	/// 
 	/// May include a `shamt` immediate value, indicated by the boolean.
-	R,
+	R(bool),
 	
 	/// "Immediate" format
 	/// 
@@ -229,9 +229,9 @@ enum Opcode {
 	/// Opcode `0x00` contains several different functions.
 	Function(u8), // -> 0x00 0x??
 	
-	// /// Not sure if this is gonna cover all coprocessor stuff. We'll see.
-	// /// It's under opcode `0x10`.
-	// Coprocessor(u8), // -> 0x10 0x??
+	/// Not sure if this is gonna cover all coprocessor stuff. We'll see.
+	/// It's under opcode `0x10`.
+	Coprocessor(u8), // -> 0x10 0x??
 	
 	// notes:
 	// coprocessor instructions have an "MF" part which determine if the ins.
@@ -265,21 +265,21 @@ impl Cpu {
 	const INSTRUCTIONS: &'static [(Opcode, &'static str, InsFormat)] = {
 		use Opcode::*; use InsFormat::*;
 	&[
-		(Function(0x00), "sll"      , R),
-		(Function(0x02), "srl"      , R),
-		(Function(0x08), "jr"       , J),
-		(Function(0x09), "jalr"     , J),
-		(Function(0x0c), "syscall", Sys),
-		(Function(0x20), "add"      , R),
-		(Function(0x21), "addu"     , R),
-		(Function(0x22), "sub"      , R),
-		(Function(0x23), "subu"     , R),
-		(Function(0x24), "and"      , R),
-		(Function(0x25), "or"       , R),
-		(Function(0x26), "xor"      , R),
-		(Function(0x27), "nor"      , R),
-		(Function(0x2a), "slt"      , R),
-		(Function(0x2b), "sltu"     , R),
+		(Function(0x00), "sll"      , R(true )),
+		(Function(0x02), "srl"      , R(true )),
+		(Function(0x08), "jr"       , J       ),
+		(Function(0x09), "jalr"     , J       ),
+		(Function(0x0c), "syscall"  , Sys     ),
+		(Function(0x20), "add"      , R(false)),
+		(Function(0x21), "addu"     , R(false)),
+		(Function(0x22), "sub"      , R(false)),
+		(Function(0x23), "subu"     , R(false)),
+		(Function(0x24), "and"      , R(false)),
+		(Function(0x25), "or"       , R(false)),
+		(Function(0x26), "xor"      , R(false)),
+		(Function(0x27), "nor"      , R(false)),
+		(Function(0x2a), "slt"      , R(false)),
+		(Function(0x2b), "sltu"     , R(false)),
 		(General(0x02), "j"    , J),
 		(General(0x03), "jal"  , J),
 		(General(0x04), "beq"  , I),
@@ -291,8 +291,8 @@ impl Cpu {
 		(General(0x0d), "ori"  , I),
 		(General(0x0e), "xori" , I),
 		(General(0x0f), "lui"  , I),
-		// (Coprocessor(0x00), "mfc0", R),
-		(Function(0x00), "mfc0", R),
+		(Coprocessor(0x00), "mfc0", R(true )),
+		// (Function(0x00), "mfc0", R(true )),
 		(General(0x23), "lw"   , I),
 		(General(0x24), "lbu"  , I),
 		(General(0x25), "lhu"  , I),
@@ -401,9 +401,12 @@ impl Cpu {
 			let rd = Register::from(bits_span(ins, 11, Self::REGISTER_SIZE) as usize);
 			
 			match ins_fmt {
-				R => {
+				R(shift) if shift => {
 					let shamt = bits_span(ins, 6, 5);
-					Some(format!("{ins_name} ${rd:?}, ${rs:?}, ${rt:?}; {shamt}"))
+					Some(format!("{ins_name} ${rd:?}, ${rs:?}, ${rt:?}, {shamt}"))
+				},
+				R(_) => {
+					Some(format!("{ins_name} ${rd:?}, ${rs:?}, ${rt:?}"))
 				},
 				I => {
 					let imm = bits_span(ins, 0, 16);
@@ -458,9 +461,13 @@ impl Cpu {
 			word::from_str_radix(s, radix).map_err(|_| "invalid literal")
 		}
 		
+		use Opcode::*;
 		use InsFormat::*;
 		let r = match def {
-			(c, _, R) => {
+			(Coprocessor(_), _, _) => {
+				unimplemented!()
+			},
+			(c, _, R(shift)) => {
 				let rd = parts.next()
 					.ok_or("missing rd register")
 					.and_then(register)?;
@@ -473,14 +480,18 @@ impl Cpu {
 					.ok_or("missing rt register")
 					.and_then(register)?;
 				
-				// TODO: loll what do i do with shift amt
-				let shamt = 0;
+				let shamt = if shift {
+					parts.next()
+					.ok_or("missing shift value")
+					.and_then(literal)?
+					.try_into() // u8
+					.map_err(|_| "shift value too large for u8")?
+				} else { 0 };
 				
-				use Opcode::*;
 				match c {
 					General(o)  => Ok(op(o, op_r(0, rd, rs, rt, shamt))),
 					Function(f) => Ok(      op_r(f, rd, rs, rt, shamt) ),
-					// _ => unimplemented!(),
+					_ => unimplemented!(),
 				}
 			},
 			(c, _, I) => {
@@ -496,7 +507,6 @@ impl Cpu {
 					.ok_or("missing immediate value")
 					.and_then(literal)?;
 				
-				use Opcode::*;
 				match c {
 					General(o) => Ok(op(o, op_i(rs, rt, imm as i16))),
 					_ => unimplemented!(),
@@ -507,7 +517,6 @@ impl Cpu {
 					.ok_or("missing address")
 					.and_then(literal)?;
 				
-				use Opcode::*;
 				match c {
 					General(o) => Ok(op(o, op_j(j_addr))),
 					_ => unimplemented!(),
@@ -538,15 +547,15 @@ impl Cpu {
 	}
 }
 
-	fn op(o: u8, x: word) -> word { ((o as word) << 26) | x }
-	
-	fn op_r(f: u8, rd: Register, rs: Register, rt: Register, shamt: u8) -> word {
-		((rs as word) << 21) | ((rt as word) << 16) | ((rd as word) << 11) | ((shamt as word) << 6) | f as word
-	}
-	
-	fn op_i(rs: Register, rt: Register, imm: i16) -> word {
-		((rs as word) << 21) | ((rt as word) << 16) | ((imm as word) & 0xFFFF)
-	}
+fn op(o: u8, x: word) -> word { ((o as word) << 26) | x }
+
+fn op_r(f: u8, rd: Register, rs: Register, rt: Register, shamt: u8) -> word {
+	((rs as word) << 21) | ((rt as word) << 16) | ((rd as word) << 11) | ((shamt as word) << 6) | f as word
+}
+
+fn op_i(rs: Register, rt: Register, imm: i16) -> word {
+	((rs as word) << 21) | ((rt as word) << 16) | ((imm as word) & 0xFFFF)
+}
 
 fn op_j(addr: word) -> word { addr >> 2 }
 
