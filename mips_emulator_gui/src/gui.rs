@@ -125,7 +125,9 @@ fn reset_cpu(cpu: &mut Cpu) {
 	
 	cpu[Register::gp] = 0x1800;
 	cpu[Register::sp] = 0x3FFC;
+	
 	cpu.pc = 0x00_0000;
+	cpu.after_delay = None;
 }
 
 fn reset_mem(mem: &mut Memory) {
@@ -393,17 +395,20 @@ impl EmuGui {
 							}
 							
 							let addr = (row as u32) << row_eat.trailing_zeros();
-						
-						let pc = core.inner.pc;
-						let epc = core.inner.cp0[Cp0Register::EPC];
-						
-						let line_highlight = match addr {
-							_ if addr == pc => Some(("→", egui::Color32::BLACK, egui::Color32::from_rgb(255, 255, 0))),
-							_ if addr == epc => Some(("⚠", egui::Color32::WHITE, egui::Color32::RED)),
-							_ => None,
-						};
-						
-						if let Some((label, color, bg_color)) = line_highlight {
+							let delay_slot = core.inner.after_delay;
+							
+							let pc = core.inner.pc;
+							let epc = core.inner.cp0[Cp0Register::EPC];
+							
+							let line_highlight = match addr {
+								_ if Some(addr) == delay_slot => Some(("→", egui::Color32::WHITE, egui::Color32::GOLD)),
+								_ if delay_slot.is_some() && addr == pc => Some(("→", egui::Color32::DARK_RED, egui::Color32::YELLOW)),
+								_ if delay_slot.is_none() && addr == pc => Some(("→", egui::Color32::BLACK, egui::Color32::YELLOW)),
+								_ if addr == epc => Some(("⚠", egui::Color32::WHITE, egui::Color32::RED)),
+								_ => None,
+							};
+							
+							if let Some((label, color, bg_color)) = line_highlight {
 								ui.label(egui::RichText::new(label).color(color).background_color(bg_color));
 							} else { ui.label(""); }
 							

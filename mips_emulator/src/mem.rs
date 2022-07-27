@@ -1,6 +1,6 @@
 use super::{word, WORD_BYTES};
 
-pub const MEMORY_SIZE: usize = 0x02_0000; // 128 KiB
+pub const MEMORY_SIZE: usize = 0x01_2000; // 128 KiB
 pub const PAGE_SIZE: usize = 0x0_1000; // 4 KiB
 pub const PAGE_NUM: usize = MEMORY_SIZE / PAGE_SIZE;
 

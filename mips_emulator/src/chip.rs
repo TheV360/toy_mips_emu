@@ -163,6 +163,11 @@ pub struct Cpu {
 	
 	/// Co-processor 0, which provides exceptions and memory management.
 	pub cp0: Cp0,
+	
+	/// Where to jump after executing the branch delay slot. For information on
+	/// what the heck a branch delay slot is, see this article:
+	/// https://devblogs.microsoft.com/oldnewthing/20180411-00/?p=98485
+	pub after_delay: Option<word>,
 }
 impl core::ops::Index<Register> for Cpu {
 	type Output = word;
@@ -245,14 +250,14 @@ enum Opcode {
 	//
 	// what the heck is sel?
 }
-impl Opcode {
-	fn from_bits(b: word) -> Self {
-		unimplemented!()
-	}
-	fn to_bits(self) -> word {
-		unimplemented!()
-	}
-}
+// impl Opcode {
+// 	fn from_bits(b: word) -> Self {
+// 		unimplemented!()
+// 	}
+// 	fn to_bits(self) -> word {
+// 		unimplemented!()
+// 	}
+// }
 
 impl Cpu {
 	/// Register size as in "number of bits a register takes up in the
@@ -302,8 +307,10 @@ impl Cpu {
 	]};
 	
 	pub fn tick(&mut self, mem: &mut Memory) {
-		self.do_instruction(mem.get_word(self.pc).unwrap(), mem);
-		self.pc += WORD_BYTES as word;
+		let ins = mem.get_word(self.pc).unwrap();
+		let next_pc = self.after_delay.take().unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
+		self.do_instruction(ins, mem);
+		self.pc = next_pc;
 	}
 	
 	pub fn do_instruction(&mut self, ins: word, mem: &mut Memory) {
@@ -330,12 +337,10 @@ impl Cpu {
 			0x00 => match function {
 				/* sll */ 0x00 => self[rd] = self[rt] << shamt,
 				/* srl */ 0x02 => self[rd] = self[rt] >> shamt,
-				
-				// TODO: handle branch delay slot
-				/*jr   */ 0x08 => self.pc = self[rs] - WORD_BYTES as word,
-				
-				/*jalr */ 0x09 => { self[ra] = self.pc; self.pc = self[rs] - WORD_BYTES as word; },
+				/*jr   */ 0x08 => self.after_delay = Some(self[rs]),
+				/*jalr */ 0x09 => { self[ra] = self.pc + (WORD_BYTES as word * 2); self.after_delay = Some(self[rs]); },
 				/*sys☎*/ 0x0c => self.exception(ExceptionCause::Sys),
+				/*break*/ 0x0d => self.exception(ExceptionCause::Bp),
 				
 				// add :: integer overflow exception
 				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) }
@@ -357,10 +362,10 @@ impl Cpu {
 				/*sltu */ 0x2b => self[rd] = (self[rs] < self[rt]) as u32,
 				_ => panic!("no impl for {opcode:02x} fn {function:02x}"),
 			},
-			/*j    */ 0x02 => self.pc = j_addr - WORD_BYTES as word,
-			/*jal  */ 0x03 => { self[ra] = self.pc; self.pc = j_addr - WORD_BYTES as word; },
-			/*beq  */ 0x04 => if self[rs] == self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
-			/*bne  */ 0x05 => if self[rs] != self[rt] { self.pc = self.pc.wrapping_add(b_addr); },
+			/*j    */ 0x02 => self.after_delay = Some(j_addr),
+			/*jal  */ 0x03 => { self[ra] = self.pc.wrapping_add(WORD_BYTES as word * 2); self.after_delay = Some(j_addr); },
+			/*beq  */ 0x04 => if self[rs] == self[rt] { self.after_delay = Some(self.pc.wrapping_add(b_addr).wrapping_add(WORD_BYTES as word)); },
+			/*bne  */ 0x05 => if self[rs] != self[rt] { self.after_delay = Some(self.pc.wrapping_add(b_addr).wrapping_add(WORD_BYTES as word)); },
 			/*addi */ 0x08 => if let Some(a) = (self[rs] as i32).checked_add(imm as i32) { self[rt] = a as u32; } else { self.exception(ExceptionCause::Ov) },
 			/*addiu*/ 0x09 => self[rt] = self[rs].wrapping_add(se_imm),
 			/*slti */ 0x0a => self[rt] = ((self[rs] as i32) < (se_imm as i32)) as u32,
