@@ -336,7 +336,7 @@ impl Cpu {
 		(Function(0x08), "jr"       , J       ),
 		(Function(0x09), "jalr"     , J       ),
 		(Function(0x0c), "syscall"  , Sys     ),
-		(Function(0x0c), "break"    , Sys     ),
+		(Function(0x0d), "break"    , Sys     ),
 		(Function(0x20), "add"      , R(false)),
 		(Function(0x21), "addu"     , R(false)),
 		(Function(0x22), "sub"      , R(false)),
@@ -485,7 +485,7 @@ impl Cpu {
 				},
 				Sys => {
 					let code = bits_span(ins, 6, 20);
-					Some(format!("syscall {code:#X}"))
+					Some(format!("{ins_name} {code:#X}"))
 				},
 			}
 		} else {
@@ -555,11 +555,11 @@ impl Cpu {
 					.map_err(|_| "shift value too large for u8")?
 				} else { 0 };
 				
-				match c {
-					General(o)  => Ok(op(o, op_r(0, rd, rs, rt, shamt))),
-					Function(f) => Ok(      op_r(f, rd, rs, rt, shamt) ),
+				Ok(match c {
+					General(o)  => op(o, op_r(0, rd, rs, rt, shamt)),
+					Function(f) =>       op_r(f, rd, rs, rt, shamt) ,
 					_ => unimplemented!(),
-				}
+				})
 			},
 			(c, _, I) => {
 				let rt = parts.next()
@@ -574,10 +574,10 @@ impl Cpu {
 					.ok_or("missing immediate value")
 					.and_then(literal)?;
 				
-				match c {
-					General(o) => Ok(op(o, op_i(rs, rt, imm as i16))),
+				Ok(match c {
+					General(o) => op(o, op_i(rs, rt, imm as i16)),
 					_ => unimplemented!(),
-				}
+				})
 			},
 			(c, _, J) => {
 				let j_addr = parts.next()
@@ -589,9 +589,13 @@ impl Cpu {
 					_ => unimplemented!(),
 				}
 			},
-			(_, _, Sys) => {
+			(c, _, Sys) => {
 				let code = if let Some(s) = parts.next() { literal(s)? } else { 0 };
-				Ok(op_syscall(code))
+				
+				Ok(match c {
+					Function(f) => op_syscall(code) | f as u32,
+					_ => unimplemented!(),
+				})
 			},
 		};
 		

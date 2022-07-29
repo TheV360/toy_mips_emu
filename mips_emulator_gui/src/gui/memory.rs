@@ -4,6 +4,8 @@ pub(super) struct MemoryWindowState {
 	look: MemoryPosition,
 	interp: MemoryInterpretation,
 	core: usize,
+	
+	edit: Option<(u32, String)>,
 }
 impl Default for MemoryWindowState {
 	fn default() -> Self {
@@ -11,6 +13,8 @@ impl Default for MemoryWindowState {
 			look: MemoryPosition::ProgramCounter,
 			interp: MemoryInterpretation::Instruction,
 			core: 0,
+			
+			edit: None,
 		}
 	}
 }
@@ -18,6 +22,20 @@ impl Default for MemoryWindowState {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum MemoryInterpretation {
 	Instruction, Text,
+	// IntU8, IntS8,
+	// IntU16, IntS16,
+	// IntU32, IntS32,
+}
+impl MemoryInterpretation {
+	// would like a "str_to_bytes(&self, &str) -> Vec<u8>" kinda thing
+	fn str_to_bytes(&self, a: &str) -> Result<Vec<u8>, &'static str> {
+		use MemoryInterpretation::*;
+		match self {
+			Instruction => Ok(Cpu::from_assembly(a)?.to_le_bytes().to_vec()),
+			Text => Ok(a.as_bytes().to_vec()),
+			// _ => Err("unimplemented"),
+		}
+	}
 }
 
 impl MemoryWindowState {
@@ -28,45 +46,40 @@ impl MemoryWindowState {
 		// https://github.com/emilk/egui/blob/master/egui_demo_lib/src/demo/mod.rs
 		
 		egui::Window::new("Memory Monitor").show(ctx, |ui| {
-			let MemoryWindowState {
-				look,
-				interp,
-				core: core_i,
-			} = self;
 			
 			// TODO: aoaoauauagh. actually scroll to whatever's in here.
 			let looked = {
-				let core = &cores[*core_i];
+				let core = &cores[self.core];
 				
-				match look {
+				match self.look {
 					ProgramCounter => (core.inner.pc >> 2).saturating_sub(3) << 2,
 					LastException => (core.inner.cp0[Cp0Register::EPC] >> 2).saturating_sub(3) << 2,
-					Position(p) => *p,
+					Position(p) => p,
 				}
 			};
 			
 			ui.horizontal(|ui| {
 				ui.menu_button("View", |ui| {
 					ui.label("See data as...");
-					ui.selectable_value(interp, Instruction, "Instructions");
-					ui.selectable_value(interp, Text, "Text (UTF-8)");
+					ui.selectable_value(&mut self.interp, Instruction, "Instructions");
+					ui.selectable_value(&mut self.interp, Text, "Text (UTF-8)");
 					
 					ui.separator();
 					
 					ui.label("Jump to...");
 					ui.horizontal_wrapped(|ui| {
-						ui.selectable_value(look, ProgramCounter, "PC");
-						ui.selectable_value(look, Position(0x00_0000), ".text");
-						ui.selectable_value(look, Position(0x00_2000), ".data");
-						ui.selectable_value(look, Position(0x01_0000), "MMIO");
-						ui.selectable_value(look, LastException, "Exception");
+						ui.selectable_value(&mut self.look, ProgramCounter, "PC");
+						ui.selectable_value(&mut self.look, Position(0x00_0000), ".text");
+						ui.selectable_value(&mut self.look, Position(0x00_2000), ".data");
+						ui.selectable_value(&mut self.look, Position(0x01_0000), "MMIO");
+						ui.selectable_value(&mut self.look, LastException, "Exception");
 					});
 					
 					ui.separator();
 					
 					ui.label("In terms of...");
 					for i in 0..cores.len() {
-						ui.selectable_value(core_i, i, format!("Core {}", i + 1));
+						ui.selectable_value(&mut self.core, i, format!("Core {}", i + 1));
 					}
 				});
 			});
@@ -76,12 +89,13 @@ impl MemoryWindowState {
 			let row_height = ui.text_style_height(&egui::TextStyle::Body) + 4.0;
 			
 			const TEXT_WIDTH: usize = 8;
-			let row_eat = match interp {
+			let row_eat = match self.interp {
 				Instruction => Cpu::INSTRUCTION_BYTES,
 				Text => TEXT_WIDTH,
+				// _ => Cpu::INSTRUCTION_BYTES,
 			};
 			
-			let core = &mut cores[*core_i];
+			let core = &mut cores[self.core];
 			
 			let row_num = mips_emulator::mem::MEMORY_SIZE / row_eat;
 			
@@ -92,9 +106,10 @@ impl MemoryWindowState {
 			egui::ScrollArea::vertical().auto_shrink([false; 2]).show_rows(
 				ui, row_height, row_num,
 				|ui, row_range| {
-					egui::Grid::new(match interp {
+					egui::Grid::new(match self.interp {
 						Instruction => "MemoryIns",
 						Text => "MemoryText",
+						// _ => "MemoryBytes",
 					}).min_col_width(1.0).show(ui, |ui| {
 						for row in row_range {
 							if row % 2 == 1 {
@@ -152,18 +167,33 @@ impl MemoryWindowState {
 							
 							v_divider(ui);
 							
-							match interp {
+							if let Some((e_addr, e_text)) = &mut self.edit {
+								if addr == *e_addr {
+									if ui.text_edit_singleline(e_text).lost_focus() {
+										if let Ok(b) = self.interp.str_to_bytes(e_text) {
+											mem.set_slice(*e_addr, &b);
+										}
+										self.edit = None;
+									}
+									
+									ui.end_row();
+									continue;
+								}
+							}
+							
+							let button_rich = match self.interp {
 								Instruction => {
 									let word = mem.get_word(addr).unwrap_or(0);
 									
 									if let Some(disasm) = Cpu::get_disassembly(word) {
-										ui.monospace(disasm);
+										egui::RichText::new(&disasm).monospace()
 									} else {
-										ui.label("Invalid");
+										egui::RichText::new("Invalid")
 									}
 								},
 								Text => {
-									let bytes = mem.get_slice(addr, TEXT_WIDTH).unwrap_or(&[0u8; TEXT_WIDTH]);
+									let bytes = mem.get_slice(addr, TEXT_WIDTH)
+										.unwrap_or(&[0u8; TEXT_WIDTH]);
 									
 									let text = String::from_utf8_lossy(bytes)
 										.into_owned();
@@ -172,10 +202,17 @@ impl MemoryWindowState {
 										.map(util::replace_control_char)
 										.collect::<String>();
 									
-									ui.monospace(text);
-								}
+									egui::RichText::new(&text).monospace()
+								},
+								// _ => unimplemented!(),
+							};
+							
+							let button_text = button_rich.text().to_owned();
+							
+							if ui.button(button_rich).double_clicked() {
+								self.edit = Some((addr, button_text));
 							}
-				
+							
 							ui.end_row();
 						}
 					});
