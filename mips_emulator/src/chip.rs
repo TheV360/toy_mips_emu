@@ -124,6 +124,7 @@ impl From<usize> for Cp0Register {
 }
 
 #[repr(u8)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExceptionCause {
 	/// Hardware Interrupt
 	Int = 0,
@@ -154,6 +155,66 @@ pub enum ExceptionCause {
 	
 	/// Floating Point Exception
 	Fpe = 15,
+}
+impl TryFrom<usize> for ExceptionCause {
+	type Error = &'static str;
+	fn try_from(r: usize) -> Result<Self, Self::Error> {
+		use ExceptionCause::*;
+		Ok(match r {
+			0 => Int,
+			
+			4 => AdEL,
+			5 => AdES,
+			
+			6 => Ibe,
+			7 => Dbe,
+			
+			8 => Sys,
+			
+			9  => Bp,
+			
+			10  => Ri,
+			
+			11 => CpU,
+			
+			12  => Ov,
+			
+			13  => Tr,
+			
+			15 => Fpe,
+			
+			_ => return Err("unknown cause"),
+		})
+	}
+}
+impl ExceptionCause {
+	pub const fn friendly_name(self) -> &'static str {
+		use ExceptionCause::*;
+		
+		match self {
+			Int => "Hardware Interrupt",
+			
+			AdEL => "Load from Illegal Address",
+			AdES => "Store to Illegal Address",
+			
+			Ibe => "Bus Error on Instruction Fetch",
+			Dbe => "Bus Error on Data Reference",
+			
+			Sys => "Syscall",
+			
+			Bp  => "Breakpoint",
+			
+			Ri  => "Reserved Instruction",
+			
+			CpU => "Unimplemented Coprocessor",
+			
+			Ov  => "Arithmetic Overflow",
+			
+			Tr  => "Trap",
+			
+			Fpe => "Floating Point Exception",
+		}
+	}
 }
 
 #[derive(Default)]
@@ -222,7 +283,7 @@ pub enum InsFormat {
 	
 	/// "`syscall`" format
 	/// 
-	/// It's `syscall`.
+	/// It's `syscall`. Or `break`. They're kinda mostly similar.
 	Sys,
 }
 
@@ -275,6 +336,7 @@ impl Cpu {
 		(Function(0x08), "jr"       , J       ),
 		(Function(0x09), "jalr"     , J       ),
 		(Function(0x0c), "syscall"  , Sys     ),
+		(Function(0x0c), "break"    , Sys     ),
 		(Function(0x20), "add"      , R(false)),
 		(Function(0x21), "addu"     , R(false)),
 		(Function(0x22), "sub"      , R(false)),

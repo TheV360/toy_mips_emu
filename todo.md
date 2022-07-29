@@ -6,25 +6,28 @@ TODO:
 
 ## Small Stuff
 
-- currently i made the text representation wayy too wide, and the hexdump column currently only shows the first 4 bytes of a string. that should be fixed.
+<!-- - ☑ currently i made the text representation wayy too wide, and the hexdump column currently only shows the first 4 bytes of a string. that should be fixed.
 	- i can vary how many labels per row there are across representation views, that's fine to do. i just can't vary # of labels per row across individual rows.
-	- my idea is to just .. humm.. yeah,  i should probably just uh have it be 4 labels for words and 16 labels for text repr. . who cares about performance in the ui? the table is lazy evaluated anyway.
-- branch delay slot doent' exist.
-	- easy to implement, actually. just a bit awkward, mainly because it.. y'know. causes execution to linger before jumping.
+	- my idea is to just .. humm.. yeah,  i should probably just uh have it be 4 labels for words and 16 labels for text repr. . who cares about performance in the ui? the table is lazy evaluated anyway.-->
+<!-- - ☑ branch delay slot doent' exist.
+	- easy to implement, actually. just a bit awkward, mainly because it.. y'know. causes execution to linger before jumping.-->
 - exceptions are incomplete
 - work on memory paging `get_slice` - it probably needs to just become an iterator or something..
+	- dummy page to read all zeros? idk..
+	- is it possible to make a word (not in awkward way) from this?
 - allow writes across pages with `set_slice`
 - complete `MemoryPlaces` and support loading some kind of executable file that includes `.data` and `.text` and everything nice.
 	- required to be inside CPU crate, as CPU needs that information of where to jump to..
-- ~~export `INSTRUCTION_SIZE` that's just `WORD_BYTES` reexported lol~~
+		- no it doesn't
+<!-- - ☑ export `INSTRUCTION_SIZE` that's just `WORD_BYTES` reexported lol-->
 - "scroll to" support in new "infinite list" memory view
 	- a "jump to exact address" thing too.
 - oof, switching representations loses my place in the memory view.
 
 ## Meta Stuff
 
-- looking at the older version of the MIPS emulator up at my v360.dev domain, the dark theme text is white instead of gray and it looks 100x better imo. need to recreate that.
-	- also fuck border radius all my homies hate border radius
+<!-- - ☑ looking at the older version of the MIPS emulator up at my v360.dev domain, the dark theme text is white instead of gray and it looks 100x better imo. need to recreate that.
+	- also fuck border radius all my homies hate border radius-->
 - CI/CD pipeline? i think it's free for all public repositories.
 	- keeps https://v360.dev/toy_mips_emu up-to-date
 	- would just imply uh..

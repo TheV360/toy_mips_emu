@@ -56,7 +56,7 @@ impl Memory {
 		}
 	}
 	
-	// no get_byte_mut because i'm scared of endianness
+	// no get_word_mut because i'm scared of endianness
 	
 	pub fn set_word(&mut self, addr: word, val: word) -> Option<()> {
 		self.set_slice(addr, &val.to_le_bytes())

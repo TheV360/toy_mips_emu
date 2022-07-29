@@ -1,7 +1,7 @@
 use eframe::egui;
 
 use mips_emulator::mem::Memory;
-use mips_emulator::chip::{Cpu, Register, Cp0Register};
+use mips_emulator::chip::{Cpu, Register, Cp0Register, ExceptionCause};
 
 use crate::util;
 
@@ -250,6 +250,7 @@ impl EmuGui {
 		for (i, core) in cores.iter_mut().enumerate() {
 			egui::Window::new(format!("Register Monitor (Core {})", i + 1))
 				.resizable(false)
+				.min_width(16.0)
 				.show(ctx,
 			|ui| {
 				use RegisterMonitorState::*;
@@ -258,8 +259,6 @@ impl EmuGui {
 					ui.selectable_value(&mut core.reg_state, Cpu, "CPU");
 					ui.selectable_value(&mut core.reg_state, Cp0, "Coproc. 0");
 				});
-				
-				ui.separator();
 				
 				match core.reg_state {
 					Cpu =>
@@ -285,26 +284,77 @@ impl EmuGui {
 						.show(ui, |ui| {
 							use Cp0Register::*;
 							
-							// TODO: wtf is going on with the width of this window
+							const fn bits_range(w: u32, b_start: usize, b_end: usize) -> u32 {
+								let mask = (1 << (b_end - b_start + 1)) - 1;
+								(w >> b_start) & mask
+							}
 							
-							let regs = [
-								(BadVAddr, "Short for \"Bad Virtual Address\".\nHolds the address that failed to be fetched, if any."),
-								(Status,   "asddslgjlkajsflkasgj"),
-								(Cause,    "asddslgjlkajsflkasgj 2"),
-								(EPC,      "Short for \"Error Program Counter\".\nHolds the address of the most recent instruction\nthat caused an exception."),
+							
+							struct UiRegister(Cp0Register, &'static str, Display);
+							struct UiBitRange(&'static str, usize, usize, &'static str, Display);
+							
+							
+							#[derive(Clone, Copy)]
+							enum Display {
+								Address,
+								Binary,
+								Func(&'static dyn Fn(u32) -> &'static str),
+								BitRanges(&'static [UiBitRange]),
+							}
+							
+							fn n_to_cause(x: u32) -> &'static str {
+								ExceptionCause::try_from(x as usize).map(ExceptionCause::friendly_name).unwrap_or("Unknown")
+							}
+							
+							let regs: &[UiRegister] = &[
+								UiRegister(BadVAddr, "Short for \"Bad Virtual Address\".\nHolds the address that failed to be fetched, if any.", Display::Address),
+								UiRegister(Status,   "Hell", Display::BitRanges(&[
+									UiBitRange("Interrupt Mask", 8, 15, "often abbreviated IMx where x is blah", Display::Binary),
+								])),
+								UiRegister(Cause,    "tooltip", Display::BitRanges(&[
+									UiBitRange("Exception Code", 2, 6, "Bits 2 through 6 of the Cause register.\nIndicates what caused the exception.", Display::Func(&n_to_cause)),
+									UiBitRange("Interrupt Pending", 8, 15, "Bits 8 through 15 of the Cause register.\nExceptions at levels 0 and 1 are software-generated.", Display::Binary)
+								])),
+								UiRegister(EPC,      "Short for \"Error Program Counter\".\nHolds the address of the most recent instruction\nthat caused an exception.", Display::Address),
 							];
 							
-							for (reg_e, tooltip) in regs {
+							fn display_it(ui: &mut egui::Ui, reg_val: u32, display: Display) {
+								match display {
+									Display::Address => { ui.monospace(format!("{reg_val:#010X}")); },
+									Display::Binary => { ui.monospace(format!("{reg_val:#034b}")); },
+									Display::Func(f) => {
+										let reg_str = f(reg_val);
+										ui.label(format!("{reg_str} ({reg_val:#X})"));
+									},
+									Display::BitRanges(ranges) => {
+										for &UiBitRange(name, b_start, b_end, tooltip, display) in ranges {
+											ui.label(format!("{name} ({b_end}..{b_start})")).on_hover_text(tooltip);
+											let bit_val = bits_range(reg_val, b_start, b_end);
+											let bit_len = b_end - b_start + 1;
+											ui.set_min_width(0.0);
+											match display {
+												Display::Address => unimplemented!(),
+												Display::Binary => {
+													ui.monospace(format!("{bit_val:#0$X}", bit_len));
+												},
+												Display::Func(f) => {
+													let bit_str = f(bit_val);
+													ui.label(format!("{bit_str} ({bit_val:#X})"));
+												},
+												Display::BitRanges(_) => unimplemented!(),
+											}
+										}
+									},
+								}
+							}
+							
+							for &UiRegister(reg_e, tooltip, display) in regs {
 								let reg = reg_e as usize;
 								let reg_val = core.inner.cp0[reg_e];
 								
-								ui.vertical_centered(|ui| {
-									ui.label(format!("{reg_e:?} ({reg:02})")).on_hover_text(tooltip);
-									ui.horizontal(|ui| {
-										ui.monospace(format!("{reg_val:#010X}"));
-										ui.monospace(format!("{reg_val:#034b}"));
-									});
-								});
+								ui.label(format!("{reg_e:?} ({reg:02})")).on_hover_text(tooltip);
+								
+								ui.horizontal_top(|ui| { display_it(ui, reg_val, display); });
 								
 								ui.end_row();
 							}
@@ -380,13 +430,17 @@ impl EmuGui {
 			
 			let row_num = mips_emulator::mem::MEMORY_SIZE / row_eat;
 			
+			fn v_divider(ui: &mut egui::Ui) -> egui::Response {
+				ui.add_sized([4.0, ui.available_height()], egui::Separator::default().spacing(0.0).vertical())
+			}
+			
 			egui::ScrollArea::vertical().auto_shrink([false; 2]).show_rows(
 				ui, row_height, row_num,
 				|ui, row_range| {
 					egui::Grid::new(match interp {
 						Instruction => "MemoryIns",
 						Text => "MemoryText",
-					}).min_col_width(12.0).show(ui, |ui| {
+					}).min_col_width(1.0).show(ui, |ui| {
 						for row in row_range {
 							if row % 2 == 1 {
 								let rect = egui::Rect::from_min_size(ui.cursor().min, egui::Vec2::new(f32::INFINITY, row_height));
@@ -401,8 +455,8 @@ impl EmuGui {
 							let epc = core.inner.cp0[Cp0Register::EPC];
 							
 							let line_highlight = match addr {
-								_ if Some(addr) == delay_slot => Some(("→", egui::Color32::WHITE, egui::Color32::GOLD)),
-								_ if delay_slot.is_some() && addr == pc => Some(("→", egui::Color32::DARK_RED, egui::Color32::YELLOW)),
+								_ if Some(addr) == delay_slot => Some(("→", egui::Color32::WHITE, egui::Color32::BLUE)),
+								_ if delay_slot.is_some() && addr == pc => Some(("→", egui::Color32::BLACK, egui::Color32::from_rgb(0xFE, 0x80, 0x19))),
 								_ if delay_slot.is_none() && addr == pc => Some(("→", egui::Color32::BLACK, egui::Color32::YELLOW)),
 								_ if addr == epc => Some(("⚠", egui::Color32::WHITE, egui::Color32::RED)),
 								_ => None,
@@ -410,7 +464,7 @@ impl EmuGui {
 							
 							if let Some((label, color, bg_color)) = line_highlight {
 								ui.label(egui::RichText::new(label).color(color).background_color(bg_color));
-							} else { ui.label(""); }
+							} else { ui.add_sized([12.0, ui.available_height()], egui::Label::new("")); }
 							
 							let brk = core.breakpoints.iter().enumerate().find(|(_, brk)| **brk == addr);
 							
@@ -425,7 +479,7 @@ impl EmuGui {
 							
 							ui.monospace(format!("{addr:#010X}"));
 							
-							ui.separator();
+							v_divider(ui);
 							
 							if let Some(bytes) = mem.get_slice(addr, row_eat) {
 								ui.horizontal(|ui| {
@@ -441,7 +495,7 @@ impl EmuGui {
 								ui.label("Page Fault :)");
 							}
 							
-							ui.separator();
+							v_divider(ui);
 							
 							match interp {
 								Instruction => {
