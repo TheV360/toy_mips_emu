@@ -11,6 +11,7 @@ use crate::timer::CpuTimer;
 mod registers; use registers::RegisterMonitorState;
 mod memory; use memory::MemoryWindowState;
 mod display; use display::VirtScreen;
+mod assembler; use assembler::AssemblerWindowState;
 
 pub struct EmuGui {
 	dark_theme: bool,
@@ -18,6 +19,7 @@ pub struct EmuGui {
 	mem: Memory,
 	screen: VirtScreen,
 	mem_win: MemoryWindowState,
+	assember: AssemblerWindowState,
 }
 
 struct Core {
@@ -92,6 +94,7 @@ impl Default for EmuGui {
 			mem,
 			screen: VirtScreen::default(),
 			mem_win: Default::default(),
+			assember: AssemblerWindowState::default(),
 		}
 	}
 }
@@ -212,6 +215,8 @@ impl eframe::App for EmuGui {
 		});
 		
 		egui::CentralPanel::default().show(ctx, |_|());
+		
+		self.assember.show(&mut self.mem, ctx);
 		
 		self.mem_win.show(&mut self.cpus, &mut self.mem, ctx);
 		

@@ -82,15 +82,17 @@ impl Memory {
 	}
 	
 	// TODO: allow writes across pages..
+	// TODO: less sloppy
 	pub fn set_slice(&mut self, addr: word, data: &[u8]) -> Option<()> {
 		let (page, offset) = Memory::addr_to_indices(addr);
 		
-		let end_addr = addr + (data.len() - 1) as word;
+		let end_addr = addr + (data.len().saturating_sub(1)) as word;
 		let (end_page, end_offset) = Memory::addr_to_indices(end_addr);
 		
 		if page != end_page { return None; }
+		if offset == end_offset { return None; }
 		
-		self.0.get_mut(page)?.get_or_insert_with(Self::make_page)[offset as usize..=end_offset as usize].copy_from_slice(data);
+		self.0.get_mut(page)?.get_or_insert_with(Self::make_page).get_mut(offset as usize..=end_offset as usize)?.copy_from_slice(data);
 		Some(())
 	}
 }
