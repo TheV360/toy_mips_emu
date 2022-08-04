@@ -1,10 +1,11 @@
 # Toy MIPS I Emulator
 
-This is supposed to emulate a good bit of a 32-bit MIPS I chip or whatever. I currently have a good bit of the main instruction set and basic syscalls implemented. I'd like to get exceptions and floating-point stuff working sometime. Maybe even a basic assembler later?
+This is supposed to emulate a **32-bit MIPS I chip**. I currently have a good bit of the main instruction set and basic syscalls implemented. It has a basic assembler, and I'm working on adding exceptions and the floating-point coprocessor.
 
-It's built in **Rust**! With **eframe**! Here's an old screenshot:
+It's built in **Rust**! With **eframe**! Here's a few screenshots, varying in recency:
 
-![Screenshot of MIPS Emulator](.readme/screenshot.png)
+![Screenshot of MIPS Emulator, showing Assembler window and Branch Delay](.readme/asm_and_branch_delay.png)
+![Old screenshot of MIPS Emulator, writing a rainbow](.readme/rainbow_display_old.png)
 
 I haven't pushed any new updates to the WASM version in a bit, sorry. Still trying to figure out some possible CI/CD way of updating it.
 

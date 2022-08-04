@@ -12,6 +12,7 @@ TODO:
 <!-- - ☑ branch delay slot doent' exist.
 	- easy to implement, actually. just a bit awkward, mainly because it.. y'know. causes execution to linger before jumping.-->
 - exceptions are incomplete
+	- https://courses.missouristate.edu/KenVollmar/MARS/Help/MarsExceptions.html
 - work on memory paging `get_slice` - it probably needs to just become an iterator or something..
 	- dummy page to read all zeros? idk..
 	- is it possible to make a word (not in awkward way) from this?
@@ -23,6 +24,14 @@ TODO:
 - "scroll to" support in new "infinite list" memory view
 	- a "jump to exact address" thing too.
 - oof, switching representations loses my place in the memory view.
+- multiplication and division instructions
+	- oops
+	- in MIPS revision 6 and up, these aren't in the instruction set?? so i really need to decide on what mips i'm talking about.
+		- i'm just.. gonna implement MIPS revision 5 / lower.. revision 6 has a bunch of new instruction formats i do Not want to bother with lmao
+		- also if i ever wanna try extending this to run some game system, it'd def fit in the MIPS rev 1..=5 range
+		- playstation is a MIPS rev 1. could target that.
+			- lol actually MIPS32 rev 1 != MIPS I. confusing!!
+			- playstation is MIPS I, n64 is MIPS III (& MIPS I sometimes)
 
 ## Meta Stuff
 
@@ -33,6 +42,7 @@ TODO:
 	- would just imply uh..
 	- see https://github.com/emilk/egui/blob/master/.github/workflows/rust.yml
 	- in turn, see https://github.com/actions-rs/cargo
+	- i rely on the `wasm-opt` binary in https://github.com/WebAssembly/binaryen for good performance good size good
 
 ## BIG FEATURES
 
@@ -56,6 +66,7 @@ TODO:
 - **basic assembler**
 	- with another example utility that does basic "jump to this label" BS
 	- i just like the idea of dogfooding my computer emulator.
+	- this is going to need to be broken out into its own crate because Of Course My Scope Has Expanded
 - **double-click to edit**
 	- registers
 		- no revert button for these -- they'd cause the program to deviate waaay too far from their original state to be worth "reverting" without an entire-- okay.. wait

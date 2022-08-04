@@ -2,10 +2,12 @@ use super::{word, WORD_BYTES, mem::Memory, bits_span, smear_bit};
 
 #[allow(non_camel_case_types)]
 #[allow(dead_code)]
-#[repr(usize)]
+#[repr(u8)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Register {
 	/// Zero (constant)
+	/// 
+	/// Should be always equal to 0, as real MIPS chips have this wired to 0.
 	zero = 0,
 	
 	/// Assembler Temporary
@@ -43,8 +45,8 @@ pub enum Register {
 	/// Return Address
 	ra = 31,
 }
-impl From<usize> for Register {
-	fn from(r: usize) -> Self {
+impl From<u8> for Register {
+	fn from(r: u8) -> Self {
 		match r {
 			// SAFE: it's within the correct boudns lol
 			0..=31 => unsafe { std::mem::transmute(r) },
@@ -58,35 +60,44 @@ impl TryFrom<&str> for Register {
 	
 	fn try_from(s: &str) -> Result<Self, Self::Error> {
 		use Register::*;
-		match s {
-			"zero" => Ok(zero),
+		Ok(match s {
+			"zero" => zero,
 			
-			"at" => Ok(at),
+			"at" => at,
 			
-			"v0" => Ok(v0), "v1" => Ok(v1),
+			"v0" => v0, "v1" => v1,
 			
-			"a0" => Ok(a0), "a1" => Ok(a1), "a2" => Ok(a2), "a3" => Ok(a3),
+			"a0" => a0, "a1" => a1, "a2" => a2, "a3" => a3,
 			
-			"t0" => Ok(t0), "t1" => Ok(t1), "t2" => Ok(t2), "t3" => Ok(t3),
-			"t4" => Ok(t4), "t5" => Ok(t5), "t6" => Ok(t6), "t7" => Ok(t7),
+			"t0" => t0, "t1" => t1, "t2" => t2, "t3" => t3,
+			"t4" => t4, "t5" => t5, "t6" => t6, "t7" => t7,
 			
-			"s0" => Ok(s0), "s1" => Ok(s1), "s2" => Ok(s2), "s3" => Ok(s3),
-			"s4" => Ok(s4), "s5" => Ok(s5), "s6" => Ok(s6), "s7" => Ok(s7),
+			"s0" => s0, "s1" => s1, "s2" => s2, "s3" => s3,
+			"s4" => s4, "s5" => s5, "s6" => s6, "s7" => s7,
 			
-			"t8" => Ok(t8), "t9" => Ok(t9),
+			"t8" => t8, "t9" => t9,
 			
-			"k0" => Ok(k0), "k1" => Ok(k1),
+			"k0" => k0, "k1" => k1,
 			
-			"gp" => Ok(gp),
+			"gp" => gp,
 			
-			"sp" => Ok(sp),
+			"sp" => sp,
 			
-			"fp" => Ok(fp),
+			"fp" => fp,
 			
-			"ra" => Ok(ra),
+			"ra" => ra,
 			
-			_ => Err("unknown register"),
-		}
+			num if num.chars().all(|c| c.is_ascii_digit()) => {
+				match num.parse::<u8>() {
+					Ok(n) if (0..=31).contains(&n) =>
+						// SAFE: immm so cool
+						unsafe { std::mem::transmute(n) },
+					_ => return Err("unknown register"),
+				}
+			},
+			
+			_ => return Err("unknown register"),
+		})
 	}
 }
 
@@ -108,7 +119,7 @@ pub enum Cp0Register {
 	Cause = 13,
 	
 	/// Program counter at where exception occurred
-	EPC = 14,
+	ExPC = 14,
 }
 impl From<usize> for Cp0Register {
 	fn from(r: usize) -> Self {
@@ -116,7 +127,7 @@ impl From<usize> for Cp0Register {
 			 8 => Cp0Register::BadVAddr,
 			12 => Cp0Register::Status,
 			13 => Cp0Register::Cause,
-			14 => Cp0Register::EPC,
+			14 => Cp0Register::ExPC,
 			
 			_  => panic!("Invalid Register"),
 		}
@@ -295,9 +306,11 @@ enum Opcode {
 	/// Opcode `0x00` contains several different functions.
 	Function(u8), // -> 0x00 0x??
 	
-	/// Not sure if this is gonna cover all coprocessor stuff. We'll see.
-	/// It's under opcode `0x10`.
-	Coprocessor(u8), // -> 0x10 0x??
+	/// Coprocessor; `.0` is which coprocessor, `.1` is opcode
+	/// 
+	/// `.0` should be a number from 0 to 3, as MIPS I supports a maximum of
+	/// 4 coprocessors.
+	Coprocessor(u8, u8), // -> 0x10 0x??
 	
 	// notes:
 	// coprocessor instructions have an "MF" part which determine if the ins.
@@ -310,6 +323,8 @@ enum Opcode {
 	// the thing is that coprocessors can define their own format.
 	//
 	// what the heck is sel?
+	//
+	// answer is most likely that it's not relevant just yet.
 }
 // impl Opcode {
 // 	fn from_bits(b: word) -> Self {
@@ -332,6 +347,7 @@ impl Cpu {
 		use Opcode::*; use InsFormat::*;
 	&[
 		(Function(0x00), "sll"      , R(true )),
+		(Function(0x00), "nop"      , Sys     ), // HACK: should really only accept if all params zeroed
 		(Function(0x02), "srl"      , R(true )),
 		(Function(0x08), "jr"       , J       ),
 		(Function(0x09), "jalr"     , J       ),
@@ -358,8 +374,7 @@ impl Cpu {
 		(General(0x0d), "ori"  , I),
 		(General(0x0e), "xori" , I),
 		(General(0x0f), "lui"  , I),
-		(Coprocessor(0x00), "mfc0", R(true )),
-		// (Function(0x00), "mfc0", R(true )),
+		(Coprocessor(0, 0x00), "mfc0", R(true )),
 		(General(0x23), "lw"   , I),
 		(General(0x24), "lbu"  , I),
 		(General(0x25), "lhu"  , I),
@@ -369,8 +384,16 @@ impl Cpu {
 	]};
 	
 	pub fn tick(&mut self, mem: &mut Memory) {
+	// 	let ins = mem.get_word(self.pc).unwrap();
+	// 	self.do_instruction(ins, mem);
+	// 	self.pc = self.after_delay.take()
+	// 		.unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
+	// }
+	// 
+	// pub fn tick_branch_delay(&mut self, mem: &mut Memory) {
 		let ins = mem.get_word(self.pc).unwrap();
-		let next_pc = self.after_delay.take().unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
+		let next_pc = self.after_delay.take()
+			.unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
 		self.do_instruction(ins, mem);
 		self.pc = next_pc;
 	}
@@ -379,9 +402,9 @@ impl Cpu {
 		use Register::*;
 		
 		let opcode = bits_span(ins, 26, 6);
-		let rs = Register::from(bits_span(ins, 21, Self::REGISTER_SIZE) as usize);
-		let rt = Register::from(bits_span(ins, 16, Self::REGISTER_SIZE) as usize);
-		let rd = Register::from(bits_span(ins, 11, Self::REGISTER_SIZE) as usize);
+		let rs = Register::from(bits_span(ins, 21, Self::REGISTER_SIZE) as u8);
+		let rt = Register::from(bits_span(ins, 16, Self::REGISTER_SIZE) as u8);
+		let rd = Register::from(bits_span(ins, 11, Self::REGISTER_SIZE) as u8);
 		
 		// I format only
 		let imm = bits_span(ins, 0, 16);      // immediate value
@@ -422,6 +445,9 @@ impl Cpu {
 				/*nor  */ 0x27 => self[rd] = !(self[rs] | self[rt]),
 				/*slt  */ 0x2a => self[rd] = ((self[rs] as i32) < (self[rt] as i32)) as u32,
 				/*sltu */ 0x2b => self[rd] = (self[rs] < self[rt]) as u32,
+				
+				/*teq  */ 0x34 => if self[rs] == self[rt] { self.exception(ExceptionCause::Tr) },
+				
 				_ => panic!("no impl for {opcode:02x} fn {function:02x}"),
 			},
 			/*j    */ 0x02 => self.after_delay = Some(j_addr),
@@ -441,6 +467,7 @@ impl Cpu {
 			/*sb   */ 0x28 => { mem.set_byte(self[rs] + se_imm, (self[rt] & 0xFF) as u8); },
 			/*sh   */ 0x29 => { mem.set_word(self[rs] + se_imm, self[rt] & 0xFFFF); },
 			/*sw   */ 0x2b => { mem.set_word(self[rs] + se_imm, self[rt]); },
+			
 			_ => panic!("no impl for {opcode:02x}"),
 		}
 	}
@@ -463,9 +490,9 @@ impl Cpu {
 		if let Some((ins_name, ins_fmt)) = Self::get_instruction_info(ins) {
 			use InsFormat::*;
 			
-			let rs = Register::from(bits_span(ins, 21, Self::REGISTER_SIZE) as usize);
-			let rt = Register::from(bits_span(ins, 16, Self::REGISTER_SIZE) as usize);
-			let rd = Register::from(bits_span(ins, 11, Self::REGISTER_SIZE) as usize);
+			let rs = Register::from(bits_span(ins, 21, Self::REGISTER_SIZE) as u8);
+			let rt = Register::from(bits_span(ins, 16, Self::REGISTER_SIZE) as u8);
+			let rd = Register::from(bits_span(ins, 11, Self::REGISTER_SIZE) as u8);
 			
 			match ins_fmt {
 				R(shift) if shift => {
@@ -531,7 +558,7 @@ impl Cpu {
 		use Opcode::*;
 		use InsFormat::*;
 		let r = match def {
-			(Coprocessor(_), _, _) => {
+			(Coprocessor(_, _), _, _) => {
 				unimplemented!()
 			},
 			(c, _, R(shift)) => {
@@ -605,7 +632,7 @@ impl Cpu {
 	
 	fn exception(&mut self, cause: ExceptionCause, ) {
 		use Register::*; use Cp0Register::*;
-		self.cp0[EPC] = self.pc;
+		self.cp0[ExPC] = self.pc;
 		self.cp0[Cause] |= (cause as u32) << 2;
 		// TODO: easy way to determine if cause is from this instruction or if
 		//       it's an interrupt that just so happened to stop this instr.

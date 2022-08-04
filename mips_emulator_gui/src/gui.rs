@@ -15,8 +15,13 @@ mod assembler; use assembler::AssemblerWindowState;
 
 pub struct EmuGui {
 	dark_theme: bool,
+	
 	cpus: Vec<Core>,
+	focused_core: usize,
+	
 	mem: Memory,
+	// places: MemoryPlaces,
+	
 	screen: VirtScreen,
 	mem_win: MemoryWindowState,
 	assember: AssemblerWindowState,
@@ -62,11 +67,9 @@ const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
 
 impl Default for EmuGui {
 	fn default() -> Self {
-		let mut mem = Memory::default();
-		reset_mem(&mut mem);
-		
 		EmuGui {
 			dark_theme: true,
+			
 			cpus: vec![
 				Core {
 					inner: {
@@ -91,9 +94,17 @@ impl Default for EmuGui {
 					..Default::default()
 				},*/
 			],
-			mem,
+			focused_core: 0,
+			
+			mem: {
+				let mut mem = Memory::default();
+				reset_mem(&mut mem);
+				mem
+			},
+			// places: MemoryPlaces::default(),
+			
 			screen: VirtScreen::default(),
-			mem_win: Default::default(),
+			mem_win: MemoryWindowState::default(),
 			assember: AssemblerWindowState::default(),
 		}
 	}
@@ -152,22 +163,31 @@ impl eframe::App for EmuGui {
 				
 				ui.separator();
 				
-				if ui.button("Open...").clicked() {
-					
+				if ui.button("Add core").clicked() {
+					cores.push(Core::default());
 				}
 			});
 			
-			for (i, core) in cores.iter_mut().enumerate() {
-				ui.separator();
-				
-				ui.horizontal(|ui| {
-					ui.monospace(format!("Core {}", i + 1));
+			ui.separator();
+			
+			let mut remove_which_core = None;
+			
+			fn v_separator(ui: &mut egui::Ui) -> egui::Response {
+				ui.add(egui::Separator::default().spacing(0.0).vertical())
+			}
+			
+			egui::Grid::new("Cores")
+				.striped(true)
+				.min_col_width(0.0)
+				.show(ui, |ui| {
+				for (i, core) in cores.iter_mut().enumerate() {
+					ui.radio_value(&mut self.focused_core, i, format!("Core {}", i + 1));
 					
-					ui.separator();
+					v_separator(ui);
 					
 					ui.monospace(format!("PC: {:#010X}", core.inner.pc));
 					
-					ui.separator();
+					v_separator(ui);
 					
 					if ui.button("Reset")
 					.on_hover_text("Resets the CPU's state -- the memory,\nthe registers, the PC, everything.")
@@ -210,15 +230,34 @@ impl eframe::App for EmuGui {
 							).on_hover_text("Frequency of CPU steps, in frames.\nFractional frames means multiple steps per frame.");
 						},
 					}
-				});
+					
+					v_separator(ui);
+					
+					if ui.small_button("×")
+					.on_hover_text("Remove this Core")
+					.clicked() {
+						remove_which_core = Some(i);
+					}
+					
+					ui.end_row();
+				}
+			});
+			
+			if let Some(core) = remove_which_core {
+				if cores.len() > 1 {
+					cores.remove(core);
+					self.focused_core = self.focused_core.min(cores.len().saturating_sub(1));
+				}
 			}
+			
+			ui.separator();
 		});
 		
 		egui::CentralPanel::default().show(ctx, |_|());
 		
 		self.assember.show(&mut self.mem, ctx);
 		
-		self.mem_win.show(&mut self.cpus, &mut self.mem, ctx);
+		self.mem_win.show(&mut self.cpus[self.focused_core], &mut self.mem, ctx);
 		
 		for (i, core) in self.cpus.iter_mut().enumerate() {
 			core.reg_state.show((i, &mut core.inner), ctx);

@@ -72,7 +72,7 @@ impl RegisterMonitorState {
 								UiBitRange("Exception Code", 2, 6, "Bits 2 through 6 of the Cause register.\nIndicates what caused the exception.", Display::Func(&n_to_cause)),
 								UiBitRange("Interrupt Pending", 8, 15, "Bits 8 through 15 of the Cause register.\nExceptions at levels 0 and 1 are software-generated.", Display::Binary)
 							])),
-							UiRegister(EPC,      "Short for \"Error Program Counter\".\nHolds the address of the most recent instruction\nthat caused an exception.", Display::Address),
+							UiRegister(ExPC,     "Short for \"Exception Program Counter\".\nHolds the address of the most recent instruction\nthat caused an exception.", Display::Address),
 						];
 						
 						fn display_it(ui: &mut egui::Ui, reg_val: u32, display: Display) {

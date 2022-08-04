@@ -93,7 +93,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					},
 					inactive: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[0]),
-						bg_fill: GRUVBOX_BG[0],
+						bg_fill: GRUVBOX_BG[1],
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -190,15 +190,4 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 	};
 	
 	ctx.set_style(style);
-}
-
-pub fn replace_control_char(c: char) -> char {
-	match c as u32 {
-		0x00..=0x1F => {
-			char::from_u32(c as u32 + 0x2400)
-			.unwrap_or(char::REPLACEMENT_CHARACTER)
-		},
-		0x7F => '\u{2421}',
-		_ => c,
-	}
 }
