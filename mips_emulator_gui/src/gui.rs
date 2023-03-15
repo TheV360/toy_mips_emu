@@ -33,6 +33,8 @@ struct Core {
 	play: bool,
 	timer: CpuTimer,
 	
+	branch_delay: bool,
+	
 	reg_state: RegisterMonitorState,
 	
 	breakpoints: Vec<u32>,
@@ -47,6 +49,8 @@ impl Default for Core {
 			timer: CpuTimer::frames(16.0),
 			#[cfg(not(target_arch = "wasm32"))]
 			timer: CpuTimer::micro(100_000),
+			
+			branch_delay: true,
 			
 			reg_state: RegisterMonitorState::Cpu,
 			
@@ -159,7 +163,13 @@ impl eframe::App for EmuGui {
 			if core.inner.cp0.halt { core.play = false; }
 			if core.play {
 				let ticked = core.timer.tick();
-				for _ in 0..ticked { core.inner.tick(mem); }
+				
+				if core.branch_delay {
+					for _ in 0..ticked { core.inner.tick_branch_delay(mem); }
+				} else {
+					for _ in 0..ticked { core.inner.tick(mem); }
+				}
+				
 				// if ticked > 0 { ctx.request_repaint(); }
 				ctx.request_repaint();
 			} else {
@@ -184,9 +194,9 @@ impl eframe::App for EmuGui {
 				
 				ui.separator();
 				
-				if ui.button("Add core").clicked() {
-					cores.push(Core::default());
-				}
+				// if ui.button("Add core").clicked() {
+				// 	cores.push(Core::default());
+				// }
 			});
 			
 			ui.separator();
@@ -251,6 +261,10 @@ impl eframe::App for EmuGui {
 							).on_hover_text("Frequency of CPU steps, in frames.\nFractional frames means multiple steps per frame.");
 						},
 					}
+					
+					v_separator(ui);
+					
+					ui.checkbox(&mut core.branch_delay, "Branch Delay");
 					
 					v_separator(ui);
 					

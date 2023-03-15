@@ -434,13 +434,13 @@ impl Cpu {
 	]};
 	
 	pub fn tick(&mut self, mem: &mut Memory) {
-	// 	let ins = mem.get_word(self.pc).unwrap();
-	// 	self.do_instruction(ins, mem);
-	// 	self.pc = self.after_delay.take()
-	// 		.unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
-	// }
-	// 
-	// pub fn tick_branch_delay(&mut self, mem: &mut Memory) {
+		let ins = mem.get_word(self.pc).unwrap();
+		self.do_instruction(ins, mem);
+		self.pc = self.after_delay.take()
+			.unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
+	}
+	
+	pub fn tick_branch_delay(&mut self, mem: &mut Memory) {
 		let ins = mem.get_word(self.pc).unwrap();
 		let next_pc = self.after_delay.take()
 			.unwrap_or_else(|| self.pc.wrapping_add(WORD_BYTES as word));
