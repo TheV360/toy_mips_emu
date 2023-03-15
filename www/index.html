@@ -3,12 +3,18 @@
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+		
 		<title>MIPS I Emulator</title>
+		
+		<link data-trunk rel="rust" data-wasm-opt="2" href="../mips_emulator_gui/Cargo.toml" data-bin="mips_emulator_gui" data-type="main" />
+		<link data-trunk rel="copy-file" href="sw.js" />
+		
 		<style>
 html {
 	touch-action: manipulation;
 }
 html, body {
+	min-height: 100vh;
 	margin: 0;
 	padding: 0;
 	overflow: hidden;
@@ -21,17 +27,13 @@ canvas {
 		</style>
 	</head>
 	<body>
-		<noscript>This site uses fancy new WASM! Yada yada, you know what to do when you see this message.</noscript>
+		<noscript>This site uses fancy new "Web Assembly" atop "JavaScript"! Yada yada, you know what to do when you see this message.</noscript>
 		<canvas id="main_canvas"></canvas>
-		<script src="mips_emulator_gui.js"></script>
 		<script>
-			wasm_bindgen("./mips_emulator_gui_bg.wasm")
-			.then(go_ahead).catch(console.error);
-			
-			function go_ahead() {
-				console.log("Starting!");
-				wasm_bindgen.start("main_canvas");
-				console.log("...did it work?");
+			if ('serviceWorker' in navigator && window.location.hash !== "#dev") {
+				window.addEventListener('load', _ => {
+					navigator.serviceWorker.register("sw.js");
+				});
 			}
 		</script>
 	</body>

@@ -1,6 +1,6 @@
 use super::*;
 
-type AssemblerError = (usize, &'static str);
+struct AssemblerError(usize, &'static str);
 
 #[derive(Default)]
 pub(super) struct AssemblerWindowState {
@@ -50,7 +50,7 @@ impl AssemblerWindowState {
 				.layouter(&mut |ui, source, wrap_width| {
 					let mut layout_job = Self::layout_line_numbers(source, ui, self.show_line_nums);
 					layout_job.wrap.max_width = wrap_width;
-					ui.fonts().layout_job(layout_job)
+					ui.fonts(|f| f.layout_job(layout_job))
 				})
 			).has_focus();
 			
@@ -80,7 +80,7 @@ impl AssemblerWindowState {
 					.auto_shrink([false, true])
 					.max_height(70.0)
 					.show(ui, |ui| {
-						for &(line, err) in inner {
+						for &AssemblerError(line, err) in inner {
 							ui.monospace(format!("Line {line}: {err}"));
 						}
 					});
@@ -105,19 +105,55 @@ impl AssemblerWindowState {
 		});
 	}
 	
-	fn assemble(source: &str) -> Result<Vec<u32>, Vec<(usize, &'static str)>> {
+	fn assemble(source: &str) -> Result<Vec<u32>, Vec<AssemblerError>> {
+		use std::collections::HashMap;
+		
 		let mut code = Vec::new();
 		let mut errors = Vec::new();
 		
+		let mut labels = HashMap::new();
+		
 		for (i, l) in source.lines().enumerate()
 			.map(|(i, s)| (i, s.trim_start()))
-			.filter(|&(_, s)| !(s.is_empty() || s.starts_with(['#', '.'])))
-			.map(|(i, s)| (i, s.split_once('#').unwrap().0.trim_end()))
+			.filter(|&(_, s)| !(s.is_empty() || s.starts_with(['#'])))
+			.map(|(i, s)| (i, s.split('#').next().unwrap().trim_end()))
 		{
-			match Cpu::from_assembly(l) {
-				Ok(w) => code.push(w),
-				Err(m) => errors.push((i + 1, m)),
-			};
+			if l.ends_with(':') && !l.contains(' ') {
+				// parse labels
+				
+				// TODO: some way to handle labels
+				labels.insert(l, code.len().wrapping_shl(2));
+				errors.push(AssemblerError(i + 1, "labels don't work yet"));
+			} else if let Some(_l) = l.strip_prefix('.') {
+				// parse preprocessor stuff
+				
+				// TODO: handle .text / .data and stuff
+				
+				// match l.split_once(' ')
+				// 	.map(|(a, b)| (a, Some(b)))
+				// 	.unwrap_or_else(|| (l, None)) {
+				// 	("text", None) => ,
+				// }
+				errors.push(AssemblerError(i + 1, "preprocessor stuff doesn't work yet"));
+			} else {
+				// hand off to CPU crate's built-in assembler
+				
+				// TODO: maybe remove it from the CPU crate and
+				//  make a proper parser in this zone??
+				//  hell, make a new crate?
+				
+				// let x = Cow::from(l);
+				// 
+				// for label in
+				// 	l.split_ascii_whitespace().skip(1)
+				// 	.filter(|&s| !s.is_empty()) {
+				// }
+				
+				match Cpu::from_assembly(l) {
+					Ok(w) => code.push(w),
+					Err(m) => errors.push(AssemblerError(i + 1, m)),
+				};
+			}
 		}
 		
 		if errors.is_empty() { Ok(code) } else { Err(errors) }

@@ -1,6 +1,9 @@
+.vscode
+
 /target
+
 /program/*.text.bin
 /program/*.data.bin
 /program/_*.asm
-# /www/*.js
-# /www/*.wasm
+
+/www/dist

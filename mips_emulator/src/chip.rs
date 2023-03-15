@@ -45,6 +45,9 @@ pub enum Register {
 	/// Return Address
 	ra = 31,
 }
+impl Register {
+	const NUM_BITS: usize = 5;
+}
 impl From<u8> for Register {
 	fn from(r: u8) -> Self {
 		match r {
@@ -233,6 +236,10 @@ pub struct Cpu {
 	pub reg: [word; 32],
 	pub pc: word,
 	
+	/// Multiply / Divide registers
+	pub hi: word,
+	pub lo: word,
+	
 	/// Co-processor 0, which provides exceptions and memory management.
 	pub cp0: Cp0,
 	
@@ -257,6 +264,9 @@ impl core::ops::IndexMut<Register> for Cpu {
 pub struct Cp0 {
 	pub halt: bool,
 	pub reg: [word; 16],
+	
+	/// What address to find the exception handler at.
+	pub exception_handler: word,
 }
 impl core::ops::Index<Cp0Register> for Cp0 {
 	type Output = word;
@@ -309,8 +319,8 @@ enum Opcode {
 	/// Coprocessor; `.0` is which coprocessor, `.1` is opcode
 	/// 
 	/// `.0` should be a number from 0 to 3, as MIPS I supports a maximum of
-	/// 4 coprocessors.
-	Coprocessor(u8, u8), // -> 0x10 0x??
+	/// 4 coprocessors. To get the opcode from it, add 10 to the coprocessor #.
+	Coprocessor(u8, u8), // -> 0x1X 0x??
 	
 	// notes:
 	// coprocessor instructions have an "MF" part which determine if the ins.
@@ -335,6 +345,43 @@ enum Opcode {
 // 	}
 // }
 
+// enum InsFormatParams {
+// 	R { rs: Register, rt: Register, rd: Register, shamt: u8, funct: u8, },
+// 	I { rs: Register, rt: Register, imm: u16, },
+// 	
+// 	/// J format
+// 	/// 
+// 	/// `addr` should probably already be shifted 2 bits to the left, since we
+// 	/// are already paying for the entire word -- why not spend a bit more (and
+// 	/// by a bit more i mean 0 more bits)
+// 	J { addr: word, }
+// }
+
+// struct Instruction {
+// 	opcode: u8,
+// 	params: InsFormatParams
+// }
+
+#[derive(Clone, Copy)]
+struct Instruction(word);
+impl Instruction {
+	fn opcode(&self) -> u8 {
+		bits_span(self.0, 26, 6) as u8
+	}
+	
+	fn rs(&self) -> Register {
+		Register::from(bits_span(self.0, 21, Register::NUM_BITS) as u8)
+	}
+	fn rt(&self) -> Register {
+		Register::from(bits_span(self.0, 16, Register::NUM_BITS) as u8)
+	}
+	fn rd(&self) -> Register {
+		Register::from(bits_span(self.0, 11, Register::NUM_BITS) as u8)
+	}
+	
+	fn shamt(&self) -> word { bits_span(self.0, 6, 5) }
+}
+
 impl Cpu {
 	/// Register size as in "number of bits a register takes up in the
 	/// bytecode representation".
@@ -343,6 +390,9 @@ impl Cpu {
 	pub const INSTRUCTION_BYTES: usize = word::BITS as usize / 8;
 	
 	/// Table of operations
+	/// 
+	/// TODO: steal python layout
+	/// ( https://github.com/infval/SlowR3KA/blob/master/slowR3KA.py  ?? )
 	const INSTRUCTIONS: &'static [(Opcode, &'static str, InsFormat)] = {
 		use Opcode::*; use InsFormat::*;
 	&[
@@ -428,7 +478,7 @@ impl Cpu {
 				/*break*/ 0x0d => self.exception(ExceptionCause::Bp),
 				
 				// add :: integer overflow exception
-				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) }
+				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) },
 				
 				// addu :: no overflow exceptions ever
 				0x21 => self[rd] = self[rs].wrapping_add(self[rt]),
@@ -631,13 +681,18 @@ impl Cpu {
 	}
 	
 	fn exception(&mut self, cause: ExceptionCause, ) {
-		use Register::*; use Cp0Register::*;
+		/*use Register::*;*/ use Cp0Register::*;
 		self.cp0[ExPC] = self.pc;
 		self.cp0[Cause] |= (cause as u32) << 2;
 		// TODO: easy way to determine if cause is from this instruction or if
 		//       it's an interrupt that just so happened to stop this instr.
 		// (so that UI can easily display '!' or ';' on the EPC)
 		// ⚠ ? ⋯ ?
+		// i mean the solution to that is.. just what cause it is. there's ones
+		// for external sources and internal sourcesss..
+		
+		self.pc = self.cp0.exception_handler;
+		// https://devblogs.microsoft.com/oldnewthing/20180416-00/?p=98515
 		
 		// self.pc = 0x8000_0080; // TODO: ahaha.. error handling. ...
 		//                       // bc i do want have cfg'able memory layout
@@ -699,6 +754,9 @@ mod tests {
 	
 	#[test]
 	fn lenient_parsing() {
-		assert_eq!(Cpu::from_assembly("add $t0 $t0 $t0"), Cpu::from_assembly("add $t0, $t0, $t0"));
+		assert_eq!(
+			Cpu::from_assembly("add $t0 $t0 $t0").unwrap(),
+			Cpu::from_assembly("add $t0, $t0, $t0").unwrap()
+		);
 	}
 }

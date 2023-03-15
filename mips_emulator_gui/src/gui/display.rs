@@ -87,7 +87,16 @@ impl VirtScreen {
 			} as usize;
 			let mem_take = self.cells.0 * self.cells.1 * 4;
 			ui.vertical_centered_justified(|ui| {
-				mmio_display(ui, mem.get_slice(look as u32, mem_take).unwrap(), self.cells, self.size);
+				if let Some(mem_slice) = mem.get_slice(look as u32, mem_take) {
+					mmio_display(ui, mem_slice, self.cells, self.size);
+				} else {
+					ui.label(format!(
+						"oops! {look:#010X} isn't in a valid page,\n\
+						or is across a page boundary.\n\
+						you didn't do anything wrong, it's my bad;\n\
+						i have a half-baked \"sparse memory\" system..."
+					));
+				}
 			});
 		});
 	}

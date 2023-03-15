@@ -87,6 +87,9 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					noninteractive: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[1]),
 						bg_fill: GRUVBOX_BG[0],
+						// TODO: weak_bg_fill is used for disabled buttons,
+						//  need to actually supply a color!!!
+						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -94,6 +97,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					inactive: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[0]),
 						bg_fill: GRUVBOX_BG[1],
+						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -101,6 +105,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					hovered: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[0]),
 						bg_fill: Color32::from_rgb(0x50, 0x49, 0x45),
+						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -108,6 +113,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					active: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[1]),
 						bg_fill: Color32::from_rgb(0x50, 0x49, 0x45),
+						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -115,6 +121,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 					open: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[0]),
 						bg_fill: GRUVBOX_BG[3],
+						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(0.0, GRUVBOX_BG[3]),
 						rounding: Rounding::none(),
 						expansion: 0.0,
@@ -152,6 +159,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						fg_stroke: Stroke::new(1.0, Color32::BLACK),
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0x78, 0x60, 0x58)),
 						bg_fill: Color32::from_rgb(0xD8, 0xD0, 0xC8),
+						weak_bg_fill: Color32::TRANSPARENT,
 						rounding: Rounding::none(),
 						expansion: 0.0,
 					},
@@ -159,6 +167,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						fg_stroke: Stroke::new(1.0, Color32::BLACK),
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0xA8, 0x98, 0x90)),
 						bg_fill: Color32::from_rgb(0xD8, 0xD0, 0xC8),
+						weak_bg_fill: Color32::TRANSPARENT,
 						rounding: Rounding::none(),
 						expansion: 0.0,
 					},
@@ -166,6 +175,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						fg_stroke: Stroke::new(1.0, Color32::BLACK),
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0xA8, 0x98, 0x90)),
 						bg_fill: Color32::from_rgb(0xB3, 0xA5, 0x9E),
+						weak_bg_fill: Color32::TRANSPARENT,
 						rounding: Rounding::none(),
 						expansion: 0.0,
 					},
@@ -173,6 +183,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						fg_stroke: Stroke::new(1.0, Color32::BLACK),
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0x20, 0x1A, 0x18)),
 						bg_fill: Color32::from_rgb(0x78, 0x60, 0x58),
+						weak_bg_fill: Color32::TRANSPARENT,
 						rounding: Rounding::none(),
 						expansion: 0.0,
 					},

@@ -63,7 +63,8 @@ enum MemoryPosition {
 }
 
 const PRG_TEXT: &[u8] = include_bytes!("../../program/out.text.bin");
-const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
+// const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
+const PRG_DATA: &[u8] = &[];
 
 impl Default for EmuGui {
 	fn default() -> Self {
@@ -109,6 +110,27 @@ impl Default for EmuGui {
 		}
 	}
 }
+
+// struct MemoryPlaces {
+// 	memory: std::ops::Range<u32>,
+// 	text: std::ops::Range<u32>,
+// 	data: std::ops::Range<u32>,
+// 	heap_stack: std::ops::Range<u32>,
+// 	mmio: std::ops::Range<u32>,
+// }
+// impl Default for MemoryPlaces {
+// 	fn default() -> Self {
+// 		MemoryPlaces {
+// 			memory: 0x0000..0x8000,
+			
+// 			text: 0x0000..0x1000,
+// 			data: 0x2000..0x3000,
+// 			heap_stack: 0x3000..0x4000,
+			
+// 			mmio: 0x7F00..0x8000,
+// 		}
+// 	}
+// }
 
 fn reset_cpu(cpu: &mut Cpu) {
 	cpu.cp0.halt = false;

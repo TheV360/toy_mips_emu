@@ -1,1 +1,5 @@
-git subtree push --prefix www origin gh-pages
+#!/bin/bash
+set -euo pipefail
+
+trunk build --release
+git subtree push --prefix www/dist origin gh-pages
