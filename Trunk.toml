@@ -2,4 +2,4 @@
 filehash = false
 target = "www/index.html"
 dist = "www/dist"
-public_url = "./"
+public_url = "/toy_mips_emu/"
