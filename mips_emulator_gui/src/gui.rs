@@ -63,8 +63,7 @@ enum MemoryPosition {
 }
 
 const PRG_TEXT: &[u8] = include_bytes!("../../program/out.text.bin");
-// const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
-const PRG_DATA: &[u8] = &[];
+const PRG_DATA: &[u8] = include_bytes!("../../program/out.data.bin");
 
 impl Default for EmuGui {
 	fn default() -> Self {
