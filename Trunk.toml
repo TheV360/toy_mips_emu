@@ -2,3 +2,4 @@
 filehash = false
 target = "www/index.html"
 dist = "www/dist"
+public_url = "./"
