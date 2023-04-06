@@ -407,6 +407,8 @@ impl Cpu {
 		(Function(0x12), "mflo"     , R(false)), // only uses rd
 		(Function(0x18), "mult"     , R(false)), // doesn't use rd
 		(Function(0x19), "multu"    , R(false)), // doesn't use rd
+		(Function(0x1a), "div"      , R(false)), // doesn't use rd
+		(Function(0x1b), "divu"     , R(false)), // doesn't use rd
 		(Function(0x20), "add"      , R(false)),
 		(Function(0x21), "addu"     , R(false)),
 		(Function(0x22), "sub"      , R(false)),
@@ -485,24 +487,46 @@ impl Cpu {
 				
 				// mult :: no overflow exceptions ever
 				0x18 => {
-					let mul_result = (self[rs] as i64).wrapping_mul(self[rt] as i64);
-					[self.hi, self.lo] = [(mul_result >> 32) as word, mul_result as word];
+					let r = (self[rs] as i64).wrapping_mul(self[rt] as i64);
+					[self.lo, self.hi] = [r as word, (r >> 32) as word];
 				},
 				
 				// mult :: no overflow exceptions ever
 				0x19 => {
-					let mul_result = (self[rs] as u64).wrapping_mul(self[rt] as u64);
-					[self.hi, self.lo] = [(mul_result >> 32) as word, mul_result as word];
+					let r = (self[rs] as u64).wrapping_mul(self[rt] as u64);
+					[self.lo, self.hi] = [r as word, (r >> 32) as word];
 				},
 				
+				// div :: no overflow exceptions ever
+				0x1a => [self.lo, self.hi] = [
+					(self[rs] as i32 / self[rt] as i32) as u32,
+					(self[rs] as i32 % self[rt] as i32) as u32,
+				],
+				
+				// divu :: no overflow exceptions ever
+				0x1b => [self.lo, self.hi] = [
+					self[rs] / self[rt],
+					self[rs] % self[rt],
+				],
+				
 				// add :: integer overflow exception
-				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) },
+				0x20 =>
+					if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) {
+						self[rd] = a as u32
+					} else {
+						self.exception(ExceptionCause::Ov)
+					},
 				
 				// addu :: no overflow exceptions ever
 				0x21 => self[rd] = self[rs].wrapping_add(self[rt]),
 				
 				// sub :: integer overflow exception
-				0x22 => if let Some(a) = (self[rs] as i32).checked_sub(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) },
+				0x22 =>
+					if let Some(a) = (self[rs] as i32).checked_sub(self[rt] as i32) {
+						self[rd] = a as u32
+					} else {
+						self.exception(ExceptionCause::Ov)
+					},
 				
 				// subu :: no overflow exceptions ever
 				0x23 => self[rd] = self[rs].wrapping_sub(self[rt]),
