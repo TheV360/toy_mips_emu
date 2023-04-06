@@ -402,7 +402,11 @@ impl Cpu {
 		(Function(0x08), "jr"       , J       ),
 		(Function(0x09), "jalr"     , J       ),
 		(Function(0x0c), "syscall"  , Sys     ),
-		(Function(0x0d), "break"    , Sys     ),
+		(Function(0x0d), "break"    , Sys     ), // TODO: new system to accommodate:
+		(Function(0x10), "mfhi"     , R(false)), // only uses rd
+		(Function(0x12), "mflo"     , R(false)), // only uses rd
+		(Function(0x18), "mult"     , R(false)), // doesn't use rd
+		(Function(0x19), "multu"    , R(false)), // doesn't use rd
 		(Function(0x20), "add"      , R(false)),
 		(Function(0x21), "addu"     , R(false)),
 		(Function(0x22), "sub"      , R(false)),
@@ -476,6 +480,20 @@ impl Cpu {
 				/*jalr */ 0x09 => { self[ra] = self.pc + (WORD_BYTES as word * 2); self.after_delay = Some(self[rs]); },
 				/*sys☎*/ 0x0c => self.exception(ExceptionCause::Sys),
 				/*break*/ 0x0d => self.exception(ExceptionCause::Bp),
+				/*mfhi */ 0x10 => self[rd] = self.hi,
+				/*mflo */ 0x12 => self[rd] = self.lo,
+				
+				// mult :: no overflow exceptions ever
+				0x18 => {
+					let mul_result = (self[rs] as i64).wrapping_mul(self[rt] as i64);
+					[self.hi, self.lo] = [(mul_result >> 32) as word, mul_result as word];
+				},
+				
+				// mult :: no overflow exceptions ever
+				0x19 => {
+					let mul_result = (self[rs] as u64).wrapping_mul(self[rt] as u64);
+					[self.hi, self.lo] = [(mul_result >> 32) as word, mul_result as word];
+				},
 				
 				// add :: integer overflow exception
 				0x20 => if let Some(a) = (self[rs] as i32).checked_add(self[rt] as i32) { self[rd] = a as u32 } else { self.exception(ExceptionCause::Ov) },

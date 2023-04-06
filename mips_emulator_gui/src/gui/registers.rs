@@ -1,7 +1,7 @@
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum RegisterMonitorState { Cpu, Cp0, }
+pub(super) enum RegisterMonitorState { Cpu, Cp0, Alu, }
 
 impl RegisterMonitorState {
 	pub(super) fn show(&mut self, (i, cpu): (usize, &mut Cpu), ctx: &egui::Context) {
@@ -15,6 +15,7 @@ impl RegisterMonitorState {
 			ui.horizontal_wrapped(|ui| {
 				ui.selectable_value(self, Cpu, "CPU");
 				ui.selectable_value(self, Cp0, "Coproc. 0");
+				ui.selectable_value(self, Alu, "ALU");
 			});
 			
 			match self {
@@ -114,6 +115,19 @@ impl RegisterMonitorState {
 							ui.horizontal_top(|ui| { display_it(ui, reg_val, display); });
 							
 							ui.end_row();
+						}
+					}),
+				Alu =>
+				egui::Grid::new("RegistersAlu")
+					.striped(true)
+					.show(ui, |ui| {
+						for (name, data)
+						in [("hi", &cpu.hi), ("lo", &cpu.lo)] {
+							ui.vertical_centered(|ui| {
+								ui.set_min_width(80.0);
+								ui.label(name);
+								ui.monospace(format!("{:#010X}", data));
+							});
 						}
 					})
 			}
