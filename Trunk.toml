@@ -1,5 +1,6 @@
 [build]
 filehash = false
 target = "www/index.html"
+release = true
 dist = "www/dist"
 public_url = "/toy_mips_emu/"
