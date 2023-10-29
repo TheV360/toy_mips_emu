@@ -1,0 +1,43 @@
+<!DOCTYPE html><html lang="en"><head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+		
+		<title>MIPS I Emulator</title>
+		
+		<script type="module">import init from '/toy_mips_emu/mips_emulator_gui.js';init('/toy_mips_emu/mips_emulator_gui_bg.wasm');</script>
+		<base href="/toy_mips_emu/">
+		
+		
+		
+		<style>
+html {
+	touch-action: manipulation;
+}
+html, body {
+	min-height: 100vh;
+	margin: 0;
+	padding: 0;
+	overflow: hidden;
+	background: black;
+}
+canvas {
+	display: block;
+	margin: 0 auto;
+}
+		</style>
+	
+<link rel="preload" href="/toy_mips_emu/mips_emulator_gui_bg.wasm" as="fetch" type="application/wasm" crossorigin="">
+<link rel="modulepreload" href="/toy_mips_emu/mips_emulator_gui.js"></head>
+	<body>
+		<noscript>This site uses fancy new "Web Assembly" atop "JavaScript"! Yada yada, you know what to do when you see this message.</noscript>
+		<canvas id="main_canvas"></canvas>
+		<script>
+			if ('serviceWorker' in navigator && window.location.hash !== "#dev") {
+				window.addEventListener('load', _ => {
+					navigator.serviceWorker.register("sw.js");
+				});
+			}
+		</script>
+	
+
+</body></html>
