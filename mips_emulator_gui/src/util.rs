@@ -82,7 +82,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 				popup_shadow: Default::default(),
 				window_shadow: Default::default(),
 				collapsing_header_frame: true,
-				window_rounding: Rounding::none(),
+				window_rounding: Rounding::ZERO,
 				widgets: Widgets {
 					noninteractive: WidgetVisuals {
 						fg_stroke: Stroke::new(fg_thickness, GRUVBOX_FG[1]),
@@ -91,7 +91,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						//  need to actually supply a color!!!
 						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					inactive: WidgetVisuals {
@@ -99,7 +99,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_fill: GRUVBOX_BG[1],
 						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					hovered: WidgetVisuals {
@@ -107,7 +107,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_fill: Color32::from_rgb(0x50, 0x49, 0x45),
 						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					active: WidgetVisuals {
@@ -115,7 +115,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_fill: Color32::from_rgb(0x50, 0x49, 0x45),
 						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(bg_thickness, GRUVBOX_BG[3]),
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					open: WidgetVisuals {
@@ -123,7 +123,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_fill: GRUVBOX_BG[3],
 						weak_bg_fill: Color32::TRANSPARENT,
 						bg_stroke: Stroke::new(0.0, GRUVBOX_BG[3]),
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 				},
@@ -153,14 +153,14 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 				popup_shadow: Default::default(),
 				window_shadow: Default::default(),
 				collapsing_header_frame: true,
-				window_rounding: Rounding::none(),
+				window_rounding: Rounding::ZERO,
 				widgets: Widgets {
 					noninteractive: WidgetVisuals {
 						fg_stroke: Stroke::new(1.0, Color32::BLACK),
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0x78, 0x60, 0x58)),
 						bg_fill: Color32::from_rgb(0xD8, 0xD0, 0xC8),
 						weak_bg_fill: Color32::TRANSPARENT,
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					inactive: WidgetVisuals {
@@ -168,7 +168,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0xA8, 0x98, 0x90)),
 						bg_fill: Color32::from_rgb(0xD8, 0xD0, 0xC8),
 						weak_bg_fill: Color32::TRANSPARENT,
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					hovered: WidgetVisuals {
@@ -176,7 +176,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0xA8, 0x98, 0x90)),
 						bg_fill: Color32::from_rgb(0xB3, 0xA5, 0x9E),
 						weak_bg_fill: Color32::TRANSPARENT,
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					active: WidgetVisuals {
@@ -184,7 +184,7 @@ pub fn set_ui_theme(ctx: &egui::Context, dark_theme: bool) {
 						bg_stroke: Stroke::new(1.0, Color32::from_rgb(0x20, 0x1A, 0x18)),
 						bg_fill: Color32::from_rgb(0x78, 0x60, 0x58),
 						weak_bg_fill: Color32::TRANSPARENT,
-						rounding: Rounding::none(),
+						rounding: Rounding::ZERO,
 						expansion: 0.0,
 					},
 					..Widgets::light()

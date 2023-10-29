@@ -397,14 +397,22 @@ impl Cpu {
 		use Opcode::*; use InsFormat::*;
 	&[
 		(Function(0x00), "sll"      , R(true )),
-		(Function(0x00), "nop"      , Sys     ), // HACK: should really only accept if all params zeroed
-		(Function(0x02), "srl"      , R(true )),
+		(Function(0x02), "srl"      , R(true )), // confirm this fills using zeroes
+		// 0x03 SRA // TODO: implement // this fills using sign-extension ("arith")
+		// 0x04 SLLV // TODO: implement
+		// 0x06 SRLV // TODO: implement
+		// 0x07 SRAV // TODO: implement
 		(Function(0x08), "jr"       , J       ),
 		(Function(0x09), "jalr"     , J       ),
+		// 0x0a MOVZ // TODO: implement
+		// 0x0b MOVN // TODO: implement
 		(Function(0x0c), "syscall"  , Sys     ),
 		(Function(0x0d), "break"    , Sys     ), // TODO: new system to accommodate:
+		// 0x0f SYNC (?)
 		(Function(0x10), "mfhi"     , R(false)), // only uses rd
+		// 0x11 MTHI // TODO: implement
 		(Function(0x12), "mflo"     , R(false)), // only uses rd
+		// 0x13 MTLO // TODO: implement
 		(Function(0x18), "mult"     , R(false)), // doesn't use rd
 		(Function(0x19), "multu"    , R(false)), // doesn't use rd
 		(Function(0x1a), "div"      , R(false)), // doesn't use rd
@@ -419,24 +427,48 @@ impl Cpu {
 		(Function(0x27), "nor"      , R(false)),
 		(Function(0x2a), "slt"      , R(false)),
 		(Function(0x2b), "sltu"     , R(false)),
+		// 0x30 TGE // TODO: implement
+		// 0x31 TGEU // TODO: implement
+		// 0x32 TLT // TODO: implement
+		// 0x33 TLTU // TODO: implement
+		// 0x34 TEQ // TODO: implement
+		// 0x36 TNE // TODO: implement
+		
+		// where does this belong
+		(Coprocessor(0, 0x00), "mfc0", R(true )),
+		
 		(General(0x02), "j"    , J),
 		(General(0x03), "jal"  , J),
 		(General(0x04), "beq"  , I),
 		(General(0x05), "bne"  , I),
+		// 0x06 BLEZ // TODO: implement
+		// 0x07 BGTZ // TODO: implement
 		(General(0x08), "addi" , I),
 		(General(0x09), "addiu", I),
 		(General(0x0a), "slti" , I),
 		(General(0x0b), "sltiu", I),
+		(General(0x0c), "andi" , I),
 		(General(0x0d), "ori"  , I),
 		(General(0x0e), "xori" , I),
 		(General(0x0f), "lui"  , I),
-		(Coprocessor(0, 0x00), "mfc0", R(true )),
+		// 0x20 LB // TODO: implement
+		// 0x21 LH // TODO: implement
+		// 0x22 LWL // TODO: implement
 		(General(0x23), "lw"   , I),
 		(General(0x24), "lbu"  , I),
 		(General(0x25), "lhu"  , I),
+		// 0x26 LWR // TODO: implement
 		(General(0x28), "sb"   , I),
 		(General(0x29), "sh"   , I),
+		// 0x2a SWL // TODO: implement
 		(General(0x2b), "sw"   , I),
+		// 0x2e SWR // TODO: implement
+		// 0x2f CACHE (?)
+		(General(0x30), "ll"   , I), // TODO: implement
+		(General(0x38), "sc"   , I), // TODO: implement
+		
+		// HACK: should really only accept if all params zeroed
+		(Function(0x00), "nop"      , Sys     ),
 	]};
 	
 	pub fn tick(&mut self, mem: &mut Memory) {
@@ -550,6 +582,7 @@ impl Cpu {
 			/*addiu*/ 0x09 => self[rt] = self[rs].wrapping_add(se_imm),
 			/*slti */ 0x0a => self[rt] = ((self[rs] as i32) < (se_imm as i32)) as u32,
 			/*sltiu*/ 0x0b => self[rt] = (self[rs] < se_imm) as u32,
+			/*andi */ 0x0c => self[rt] = self[rs] & imm,
 			/*ori  */ 0x0d => self[rt] = self[rs] | imm,
 			/*xori */ 0x0e => self[rt] = self[rs] ^ imm,
 			/*lui  */ 0x0f => self[rt] = imm << 16,

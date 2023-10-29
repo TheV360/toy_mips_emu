@@ -7,7 +7,7 @@ It's built in **Rust**! With **eframe**! Here's a few screenshots, varying in re
 ![Screenshot of MIPS Emulator, showing Assembler window and Branch Delay](.readme/asm_and_branch_delay.png)
 ![Old screenshot of MIPS Emulator, writing a rainbow](.readme/rainbow_display_old.png)
 
-I haven't pushed any new updates to the WASM version in a bit, sorry. Still trying to figure out some possible CI/CD way of updating it.
+I'm able to upload the WASM version every so often, but in the future I'd still like to figure out some possible "Continuous Deployment" way of updating it.
 
 ## Features
 - Step through code, or run at an interval
@@ -31,6 +31,10 @@ If you don't have a program already at the ready, you'll need [MARS](http://cour
 Pretty dang soon I'm going to add the ability to build and assemble programs in the emulator itself, so this is by no means a huge dependency. <!-- actually damn it that means i need to think about adding macros. -->
 
 No command line arguments for now.
+
+## Resources
+
+I'm vaguely targeting [the PlayStation 1's CPU](https://www.copetti.org/writings/consoles/playstation/#sources), but I take my own artistic license when I think it'd be cool to do [OTHER THING]. The PDFs linked in that Copetti article are very helpful.
 
 ## Credits
 
